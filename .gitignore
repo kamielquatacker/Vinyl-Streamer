@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.vscode/
+.DS_Store
+*.log
+IMPLEMENTATION_PLAN.md

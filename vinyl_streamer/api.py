@@ -44,7 +44,7 @@ def get_devices() -> dict:
   sources = [
     source
     for source in audio.list_sources()
-    if "input" in source.name and not source.name.endswith(".monitor")
+    if not source.name.endswith(".monitor") and not source.name.startswith("auto_null")
   ]
   sources.sort(key=lambda item: item.name)
   return {

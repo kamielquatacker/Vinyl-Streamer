@@ -106,6 +106,10 @@ def get_sink_volume(sink: str) -> int | None:
 def pick_default_source() -> Optional[str]:
     sources = list_sources()
     for source in sources:
+        if "platform-sound" in source.name and not source.name.endswith(".monitor"):
+            return source.name
+    for source in sources:
         if "usb" in source.name and "input" in source.name:
             return source.name
-    return sources[0].name if sources else None
+    candidates = [s for s in sources if not s.name.endswith(".monitor") and not s.name.startswith("auto_null")]
+    return candidates[0].name if candidates else None

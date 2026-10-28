@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f7f5">
+  <title>Vinyl Streamer</title>
+  <link rel="stylesheet" href="/static/style.css?v=2">
+  <script type="module" src="/static/app.js?v=2"></script>
+</head>
+<body>
+  <main>
+    <header class="header">
+      <span class="brand-mark" aria-hidden="true"><span></span></span>
+      <div><h1>Vinyl Streamer</h1><p>Van je platenspeler naar je speaker.</p></div>
+    </header>
+
+    <section class="panel playback" aria-label="Streaming">
+      <div class="status-line"><span class="status" id="status" role="status">Status ophalen…</span><span class="live-dot" id="liveDot" aria-hidden="true"></span></div>
+      <h2 id="playbackTitle">Even geduld</h2>
+      <p class="route" id="route">We halen je audioverbinding op.</p>
+      <button class="primary" id="streamButton" type="button" disabled>Start streaming</button>
+      <p class="hint" id="startHint">Apparaten worden opgehaald.</p>
+      <p class="notice error" id="actionError" role="alert" hidden></p>
+      <p class="notice" id="actionWarning" role="status" hidden></p>
+      <p class="notice error" id="statusError" role="alert" hidden></p>
+      <p class="notice" id="streamWarning" role="status" hidden></p>
+    </section>
+
+    <section class="section" aria-labelledby="speakersTitle">
+      <div class="section-heading"><h2 id="speakersTitle">Speaker</h2><button class="text-button" id="refreshButton" type="button">Vernieuwen</button></div>
+      <div class="speakers" id="speakers" role="group" aria-label="Kies een speaker" aria-busy="true"></div>
+      <p class="hint" id="deviceHint" role="status">Speakers zoeken…</p>
+      <p class="notice error" id="deviceError" role="alert" hidden></p>
+      <p class="notice" id="deviceWarning" role="status" hidden></p>
+    </section>
+
+    <section class="panel volume-panel" aria-labelledby="volumeTitle">
+      <div class="section-heading"><h2 id="volumeTitle">Volume</h2><output id="volumeValue" for="volume">—</output></div>
+      <p class="hint" id="volumeTarget">Beschikbaar tijdens streaming.</p>
+      <fieldset id="volumeControls" disabled aria-label="Volume van de actieve speaker">
+        <div class="volume-row">
+          <button class="square" id="volumeDown" type="button" aria-label="Volume 5 procent lager">−</button>
+          <input id="volume" aria-label="Volume" type="range" min="0" max="100" step="1" value="20">
+          <button class="square" id="volumeUp" type="button" aria-label="Volume 5 procent hoger">+</button>
+        </div>
+        <button class="mute-button" id="muteButton" type="button" aria-pressed="false">Dempen</button>
+      </fieldset>
+      <p class="notice error" id="volumeError" role="alert" hidden></p>
+    </section>
+
+    <details class="advanced">
+      <summary>Geavanceerd</summary>
+      <div class="advanced-content">
+        <label for="source">Audio-input</label>
+        <select id="source" disabled><option value="">Audio-inputs ophalen…</option></select>
+        <label for="latency">Audiobuffer <span class="unit">(ms)</span></label>
+        <input id="latency" type="number" min="40" max="500" step="1" value="80" required>
+        <p class="hint">Een grotere buffer kan haperingen verminderen. Dit is niet de totale AirPlay-vertraging. Wijzigbaar als de stream gestopt is.</p>
+        <label class="checkbox"><input id="boost" type="checkbox"> Volumeversterking tot 150% toestaan</label>
+        <details class="technical"><summary>Technische details</summary><dl id="technicalDetails"></dl></details>
+      </div>
+    </details>
+    <footer>Audio via AirPlay <span aria-hidden="true">·</span> <span id="updated">Nog niet bijgewerkt</span></footer>
+  </main>
+</body>
+</html>

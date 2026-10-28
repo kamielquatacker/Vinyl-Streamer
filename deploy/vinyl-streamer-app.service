@@ -1,0 +1,15 @@
+[Unit]
+Description=Vinyl Streamer
+After=pipewire-pulse.service pulseaudio.service
+
+[Service]
+Type=simple
+Environment=XDG_RUNTIME_DIR=%t
+Environment=PULSE_SERVER=unix:%t/pulse/native
+WorkingDirectory=%h/Vinyl-Streamer
+ExecStart=%h/Vinyl-Streamer/venv/bin/python %h/Vinyl-Streamer/scripts/run_server.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

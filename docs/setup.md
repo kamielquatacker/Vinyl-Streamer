@@ -1,0 +1,190 @@
+# Raspberry Pi setup
+
+The installation folder is `~/Vinyl-Streamer`. The app runs as the user service `vinyl-streamer-app.service`, under the same user as PipeWire/PulseAudio. Examples use the SSH user `kamiel` and Pi address `192.168.129.204`; change these for another Pi.
+
+## Prerequisites
+
+- Raspberry Pi OS with Python **3.11+** and `venv`.
+- A working USB capture input and compatible AirPlay/RAOP speaker.
+- PipeWire with PulseAudio compatibility, or PulseAudio, with `pactl` and RAOP discovery support.
+- Free disk space for a second environment during updates. About 1 GB free gives useful headroom.
+
+On the Pi, as the audio-session user:
+
+```bash
+python3 --version
+df -h /
+pactl info
+pactl list short sources
+pactl list short sinks
+```
+
+If creating a virtual environment fails because `venv` is missing, install `python3-venv` using your OS package manager.
+
+## Package and upload
+
+On your development computer, from the repository root:
+
+```bash
+python scripts/package_release.py
+```
+
+On Windows PowerShell, upload the generated archive and its matching checksum (replace the version for later releases):
+
+```powershell
+scp .\artifacts\vinyl-streamer-0.1.0.tar.gz .\artifacts\vinyl-streamer-0.1.0.tar.gz.sha256 kamiel@192.168.129.204:~/
+ssh kamiel@192.168.129.204
+```
+
+On the Pi, verify the upload **before extracting**:
+
+```bash
+cd "$HOME"
+sha256sum -c vinyl-streamer-0.1.0.tar.gz.sha256
+```
+
+It must report `OK`. A failed upload to a full disk can leave a file with the correct name and size but invalid contents. Stop if the checksum fails and upload both files again.
+
+## First installation
+
+These commands assume `~/Vinyl-Streamer` does not already exist. If it does, use the update procedure below.
+
+```bash
+mkdir "$HOME/Vinyl-Streamer" &&
+tar -xzf "$HOME/vinyl-streamer-0.1.0.tar.gz" -C "$HOME/Vinyl-Streamer"
+```
+
+Then install and check the app. Stop if any command fails.
+
+```bash
+cd "$HOME/Vinyl-Streamer"
+python3 -m venv venv
+./venv/bin/python -m pip install --no-cache-dir -r requirements.txt
+./venv/bin/python -c "from app.api import app; print('Application loaded')"
+./venv/bin/python scripts/smoke_check.py
+```
+
+The smoke check enables RAOP discovery if needed, waits up to five seconds for an output, and excludes monitor inputs. It does not start a stream or confirm audible playback.
+
+Before starting the new service, stop and disable any older `vinyl-streamer.service` using its original scope: `sudo systemctl` for a system service, or `systemctl --user` for a user service. Keep its installation folder until the new version has been checked.
+
+Install the user service:
+
+```bash
+mkdir -p "$HOME/.config/systemd/user"
+cp deploy/vinyl-streamer-app.service "$HOME/.config/systemd/user/"
+systemctl --user daemon-reload
+sudo loginctl enable-linger "$(id -un)"
+systemctl --user enable --now vinyl-streamer-app.service
+```
+
+Lingering starts the user manager at boot and keeps it running after logout. Run only one API instance for this audio session. The service expects the environment at `~/Vinyl-Streamer/venv`; adjust its paths if you install elsewhere.
+
+## Check the running version
+
+```bash
+systemctl --user status vinyl-streamer-app --no-pager
+systemctl --user show vinyl-streamer-app -p MainPID -p WorkingDirectory -p ExecStart --no-pager
+curl --fail http://127.0.0.1:8000/api/status
+echo
+cat "$HOME/Vinyl-Streamer/VERSION"
+```
+
+The working directory and command must point into `~/Vinyl-Streamer`. Open `http://raspberrypi.local:8000/`, refresh the browser and test **Stop streaming**, **Start streaming**, volume and mute. A healthy status is not proof of audible playback.
+
+After first installation, a reboot is a useful check of automatic startup. The API service starts at boot; a fresh boot does not automatically start an audio stream.
+
+## Update an existing installation
+
+Build and upload a new archive and checksum as above. The example below uses `0.1.0`; change it to the version you are installing.
+
+Unpack into a separate folder while the current app keeps running:
+
+```bash
+cd "$HOME"
+sha256sum -c vinyl-streamer-0.1.0.tar.gz.sha256 &&
+mkdir "$HOME/Vinyl-Streamer-next" &&
+tar -xzf "$HOME/vinyl-streamer-0.1.0.tar.gz" -C "$HOME/Vinyl-Streamer-next"
+```
+
+Stop at any error. If `Vinyl-Streamer-next` or `Vinyl-Streamer-previous` already exists, inspect it first and move it to another backup name if you need to retain it.
+
+Switch folders after verifying the archive. The previous installation, including its environment, is kept for rollback:
+
+```bash
+cd "$HOME"
+test ! -e "$HOME/Vinyl-Streamer-previous" &&
+systemctl --user stop vinyl-streamer-app &&
+mv "$HOME/Vinyl-Streamer" "$HOME/Vinyl-Streamer-previous" &&
+mv "$HOME/Vinyl-Streamer-next" "$HOME/Vinyl-Streamer"
+```
+
+Create the new environment at its final path, install dependencies and check the app. There is a short web-app interruption during this step. Stop at any error; use the rollback below if installation fails. The audio loopback may keep playing independently.
+
+```bash
+cd "$HOME/Vinyl-Streamer"
+python3 -m venv venv &&
+./venv/bin/python -m pip install --no-cache-dir -r requirements.txt &&
+./venv/bin/python -c "from app.api import app; print('Application loaded')" &&
+./venv/bin/python scripts/smoke_check.py
+```
+
+After all checks pass, refresh the service and start it:
+
+```bash
+cp deploy/vinyl-streamer-app.service "$HOME/.config/systemd/user/"
+systemctl --user daemon-reload
+systemctl --user start vinyl-streamer-app
+```
+
+Repeat the running-version and playback checks. Once everything works, the previous folder can be removed manually to recover space.
+
+### Roll back an update
+
+These commands preserve the failed version as `~/Vinyl-Streamer-failed`. That destination must not already exist.
+
+```bash
+cd "$HOME"
+test ! -e "$HOME/Vinyl-Streamer-failed" &&
+test -d "$HOME/Vinyl-Streamer-previous" &&
+systemctl --user stop vinyl-streamer-app &&
+mv "$HOME/Vinyl-Streamer" "$HOME/Vinyl-Streamer-failed" &&
+mv "$HOME/Vinyl-Streamer-previous" "$HOME/Vinyl-Streamer"
+
+cd "$HOME/Vinyl-Streamer"
+cp deploy/vinyl-streamer-app.service "$HOME/.config/systemd/user/"
+systemctl --user daemon-reload
+systemctl --user start vinyl-streamer-app
+```
+
+For the original manual installation, its service file may still be named `deploy/vinyl-streamer.service`; in that case copy it to `~/.config/systemd/user/vinyl-streamer-app.service` instead.
+
+## Troubleshooting
+
+```bash
+journalctl --user -u vinyl-streamer-app -n 60 --no-pager
+./venv/bin/python scripts/smoke_check.py
+pactl list short modules
+pactl list short sources
+pactl list short sinks
+```
+
+- **Speaker found, no usable output:** network discovery is separate from RAOP output creation. Check that `module-raop-discover` loads and that the speaker is compatible. PipeWire usually names outputs `raop_sink.*`; PulseAudio may use `raop_output.*`.
+- **No audio input:** check the USB cable and exclude `.monitor` entries when inspecting capture inputs.
+- **Old audio keeps playing after stopping the service:** the loopback is owned by the audio server and survives an API restart. The new app can recover control of it. Use its Stop streaming button.
+- **Port already in use:** compare `MainPID` from `systemctl --user show` with `sudo ss -ltnp 'sport = :8000'` and check for an older service.
+- **No space left:** inspect `df -h /`, `df -i /` and `sudo journalctl --disk-usage`. Review old logs and caches before deleting anything. Installing with `--no-cache-dir` avoids retaining pip downloads.
+- **Buffer setting:** 40?500 ms controls the local loopback buffer, not the total AirPlay/network delay.
+- **Status versus sound:** Stream active means the audio loopback exists. It cannot confirm the speaker is producing sound.
+
+## Configuration
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `VINYL_HOST` | `0.0.0.0` | Listening address |
+| `VINYL_PORT` | `8000` | Listening port |
+| `VINYL_STATE_PATH` | `<temporary-directory>/vinyl_streamer_state.json` | Atomically written stream state; normally `/tmp/vinyl_streamer_state.json` on the Pi |
+
+The state filename remains unchanged so the new app can recover an existing stream. Stale module IDs are checked against the audio server before use. An audio-server restart clears stale running state; a state-write failure leaves the active module controllable in memory and reports a warning.
+
+For service overrides, use `systemctl --user edit vinyl-streamer-app`, add an `[Service]` section with the required `Environment=...` values, then reload and restart the service. Read the status/logs after a change.

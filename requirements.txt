@@ -1,3 +1,19 @@
-fastapi>=0.100
-uvicorn>=0.23
-zeroconf>=0.115
+# Tested runtime versions for Python 3.11+ (Windows and Raspberry Pi OS).
+# Update deliberately, run the tests, and check audio on the Pi before releasing.
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.15.1
+click==8.5.0
+colorama==0.4.6; sys_platform == "win32"
+fastapi==0.162.0
+h11==0.16.0
+idna==3.20
+ifaddr==0.2.0
+opentelemetry-api==1.45.1
+pydantic==2.14.1
+pydantic-core==2.50.1
+starlette==1.10.0
+typing-extensions==4.16.0
+typing-inspection==0.4.4
+uvicorn==0.54.0
+zeroconf==0.151.5

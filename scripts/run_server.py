@@ -2,6 +2,8 @@
 """Run the Vinyl Streamer API server."""
 
 from pathlib import Path
+import logging
+import os
 import sys
 
 import uvicorn
@@ -13,4 +15,8 @@ if str(ROOT) not in sys.path:
 
 
 if __name__ == "__main__":
-    uvicorn.run("vinyl_streamer.api:app", host="0.0.0.0", port=8000, reload=False)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    uvicorn.run(
+        "app.api:app", host=os.environ.get("VINYL_HOST", "0.0.0.0"),
+        port=int(os.environ.get("VINYL_PORT", "8000")), reload=False, workers=1,
+    )

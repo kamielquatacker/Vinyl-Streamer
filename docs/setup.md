@@ -159,6 +159,22 @@ systemctl --user start vinyl-streamer-app
 
 For the original manual installation, its service file may still be named `deploy/vinyl-streamer.service`; in that case copy it to `~/.config/systemd/user/vinyl-streamer-app.service` instead.
 
+## iPhone and Android home screen
+
+Use the same Pi address consistently: browser preferences and home-screen apps belong to the exact address (origin) you opened. The Pi and phone must be on the same reachable network.
+
+- **iPhone:** open the app in Safari, choose Share, then Add to Home Screen. Leave the name as **Vinyl Streamer**. If Safari shows an Open as Web App option, enable it. Launch from the new icon.
+- **Android:** open the app in Chrome, then choose Add to Home screen or Install app from the menu. The app supplies 192px/512px icons plus a maskable icon for Android's different icon shapes.
+- **Existing shortcut:** after updating, remove the old home-screen icon and add it again if its name or icon does not refresh. Deleting a shortcut does not delete the Pi installation.
+
+The current local HTTP address continues to work for control. Chrome's full install promotion/standalone PWA experience requires HTTPS; over a private HTTP address Android may offer only a browser shortcut. Metadata alone cannot remove this browser restriction. Full installation needs HTTPS trusted by the phone; it does not require making the Pi publicly accessible. See [Chrome installation criteria](https://web.dev/articles/install-criteria) and [WebKit home-screen support](https://webkit.org/blog/17333/webkit-features-in-safari-26-0/).
+
+The page supports safe areas around notches and home indicators, native dark form controls and large touch targets. It refreshes live status when brought back to the foreground or the network returns. No offline audio control or API-response caching is implemented: the Pi must be reachable for its controls to work.
+
+The source icon is `app/static/icons/icon.svg`. PNG/ICO exports are committed, so installation on the Pi requires no graphics tools. Developers can rebuild them using `python scripts/build_icons.py` (or add `--browser /path/to/chrome`) after installing the development requirements. The SVG keeps the record within Android's maskable safe zone.
+
+The browser check supports `--engine webkit` after `python -m playwright install webkit`. Chromium/WebKit emulation checks layouts and assets; final Add to Home Screen and status-bar appearance must be checked on actual phones.
+
 ## Troubleshooting
 
 ```bash

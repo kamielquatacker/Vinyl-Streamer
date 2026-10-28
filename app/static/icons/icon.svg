@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <title>Vinyl Streamer</title>
+  <path fill="#1d2521" d="M0 0h512v512H0z"/>
+  <circle cx="256" cy="256" r="184" fill="#263b32" stroke="#5f856a" stroke-width="3"/>
+  <g fill="none" stroke="#466452" stroke-width="3">
+    <circle cx="256" cy="256" r="170"/>
+    <circle cx="256" cy="256" r="157"/>
+    <circle cx="256" cy="256" r="144"/>
+    <circle cx="256" cy="256" r="131"/>
+    <circle cx="256" cy="256" r="118"/>
+    <circle cx="256" cy="256" r="105"/>
+    <circle cx="256" cy="256" r="92"/>
+    <circle cx="256" cy="256" r="79"/>
+    <circle cx="256" cy="256" r="66"/>
+  </g>
+  <circle cx="256" cy="256" r="54" fill="#d4e5bf"/>
+  <circle cx="256" cy="256" r="14" fill="#263b32"/>
+</svg>

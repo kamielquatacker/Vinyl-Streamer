@@ -16,9 +16,15 @@ import zlib
 ROOT = Path(__file__).resolve().parents[1]
 TOP_LEVEL = ("README.md", "VERSION", "requirements.txt", "requirements-dev.txt", "pytest.ini")
 DIRECTORIES = ("app", "scripts", "tests", "deploy", "docs")
-TEXT_SUFFIXES = {".py", ".js", ".css", ".html", ".md", ".txt", ".ini", ".service"}
+TEXT_SUFFIXES = {".py", ".js", ".css", ".html", ".md", ".txt", ".ini", ".service", ".svg", ".webmanifest"}
 EXCLUDED = {"__pycache__", "venv", "artifacts", "node_modules"}
-REQUIRED = ("app/api.py", "app/static/index.html", "scripts/run_server.py", "deploy/vinyl-streamer-app.service")
+REQUIRED = (
+    "app/api.py", "app/static/index.html", "scripts/run_server.py", "deploy/vinyl-streamer-app.service",
+    "app/static/manifest.webmanifest", "app/static/icons/icon.svg",
+    "app/static/icons/icon-192.png", "app/static/icons/icon-512.png",
+    "app/static/icons/icon-maskable-512.png", "app/static/icons/apple-touch-icon.png",
+    "app/static/icons/favicon-32.png", "app/static/icons/favicon.ico",
+)
 
 
 def source_files(root: Path) -> dict[str, bytes]:

@@ -2,11 +2,12 @@ import gzip
 import hashlib
 import io
 import json
+from pathlib import Path
 import tarfile
 
 import pytest
 
-from scripts.package_release import DIRECTORIES, REQUIRED, TOP_LEVEL, build_release, verify_archive
+from scripts.package_release import DIRECTORIES, REQUIRED, TEXT_SUFFIXES, TOP_LEVEL, build_release, verify_archive
 
 
 @pytest.fixture
@@ -35,7 +36,11 @@ def test_release_has_valid_checksum_manifest_and_no_local_files(release_root):
         for name, expected_hash in manifest["files"].items():
             data = package.extractfile(name).read()
             assert hashlib.sha256(data).hexdigest() == expected_hash
-            assert b"\r\n" not in data
+            if Path(name).suffix in TEXT_SUFFIXES or name == "VERSION":
+                assert b"\r\n" not in data
+            else:
+                # Binary assets must keep their original bytes, including CRLF sequences.
+                assert data == (release_root / name).read_bytes()
 
 
 def test_same_sources_produce_same_archive(release_root):

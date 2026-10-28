@@ -78,3 +78,35 @@ def test_pulseaudio_outputs_are_listed_and_selectable(client, backend, name, dri
     response = client.get("/api/devices")
     assert response.json()["sinks"][0]["name"] == name
     assert client.post("/api/connect", json={"sink": name}).status_code == 200
+
+
+def test_home_screen_manifest_and_icons_are_valid(client):
+    import struct
+
+    response = client.get("/manifest.webmanifest")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/manifest+json")
+    manifest = response.json()
+    assert manifest["name"] == "Vinyl Streamer"
+    assert manifest["id"] == manifest["start_url"] == manifest["scope"] == "/"
+    assert manifest["display"] == "standalone"
+    assert any(icon.get("purpose") == "maskable" for icon in manifest["icons"])
+    assert {"192x192", "512x512"} <= {icon["sizes"] for icon in manifest["icons"]}
+    for icon in manifest["icons"]:
+        image = client.get(icon["src"])
+        assert image.status_code == 200
+        assert image.content[:8] == bytes.fromhex("89504e470d0a1a0a")
+        width, height = struct.unpack(">II", image.content[16:24])
+        assert f"{width}x{height}" == icon["sizes"]
+
+
+def test_apple_icon_and_browser_favicon_are_served(client):
+    import struct
+
+    apple = client.get("/apple-touch-icon.png")
+    assert apple.status_code == 200
+    assert apple.headers["content-type"] == "image/png"
+    assert struct.unpack(">II", apple.content[16:24]) == (180, 180)
+    favicon = client.get("/favicon.ico")
+    assert favicon.status_code == 200
+    assert favicon.content[:6] == bytes.fromhex("000001000100")

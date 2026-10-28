@@ -124,3 +124,21 @@ def set_mute(req: MuteRequest) -> dict:
 @app.get("/", response_class=FileResponse)
 def index() -> FileResponse:
     return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def manifest() -> FileResponse:
+    return FileResponse(
+        STATIC / "manifest.webmanifest", media_type="application/manifest+json",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
+@app.get("/apple-touch-icon.png", include_in_schema=False)
+def apple_touch_icon() -> FileResponse:
+    return FileResponse(STATIC / "icons" / "apple-touch-icon.png", media_type="image/png")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> FileResponse:
+    return FileResponse(STATIC / "icons" / "favicon.ico", media_type="image/vnd.microsoft.icon")

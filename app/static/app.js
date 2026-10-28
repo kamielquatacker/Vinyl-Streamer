@@ -346,6 +346,10 @@ $('source').addEventListener('change', renderDetails);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) { refreshStatus(); refreshDevices(); }
 });
+window.addEventListener('pageshow', event => {
+  if (event.persisted) { refreshStatus(); refreshDevices(); }
+});
+window.addEventListener('online', () => { refreshStatus(); refreshDevices(); });
 render();
 refreshStatus();
 refreshDevices();

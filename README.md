@@ -18,6 +18,10 @@ Open **http://raspberrypi.local:8000/**.
 
 For installation, updates, recovery and troubleshooting, see **[docs/setup.md](docs/setup.md)**. The installed user service is **`vinyl-streamer-app.service`** and the default installation folder is **`~/Vinyl-Streamer`**.
 
+## Add to your phone's home screen
+
+The app provides a vinyl icon, the name **Vinyl Streamer**, and a standalone display configuration for iPhone and Android. Add it using Safari's Share menu or Chrome's Add to Home screen menu. See [mobile setup](docs/setup.md#iphone-and-android-home-screen) for instructions and the local HTTP/HTTPS limitation.
+
 ## Everyday commands on the Pi
 
 ```bash

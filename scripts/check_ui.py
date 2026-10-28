@@ -15,8 +15,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
-        if self.path == "/":
-            self.path = "/static/index.html"
+        routes = {
+            "/": "/static/index.html",
+            "/manifest.webmanifest": "/static/manifest.webmanifest",
+            "/apple-touch-icon.png": "/static/icons/apple-touch-icon.png",
+            "/favicon.ico": "/static/icons/favicon.ico",
+        }
+        self.path = routes.get(self.path, self.path)
         super().do_GET()
 
     def log_message(self, *args):
@@ -26,13 +31,14 @@ class Handler(SimpleHTTPRequestHandler):
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--browser", help="Optional path to a Chrome/Chromium executable")
+    parser.add_argument("--engine", choices=("chromium", "webkit"), default="chromium")
     args = parser.parse_args()
     server = ThreadingHTTPServer(("127.0.0.1", 0), partial(Handler, directory=str(ROOT / "app")))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(executable_path=args.browser, headless=True)
+            browser = getattr(playwright, args.engine).launch(executable_path=args.browser, headless=True)
             context = browser.new_context(viewport={"width": 1100, "height": 1100}, device_scale_factor=1, color_scheme="light")
             page = context.new_page()
             errors = []
@@ -241,9 +247,36 @@ def main() -> None:
             flags["status_error"] = False
             expect(page.locator("#statusError")).to_be_hidden(timeout=6000)
             expect(page.locator("#streamButton")).to_be_enabled()
+            # Home-screen metadata and touch layouts for iPhone and Android sizes.
+            manifest = page.request.get(page.url + "manifest.webmanifest").json()
+            assert manifest["name"] == "Vinyl Streamer"
+            assert manifest["display"] == "standalone" and manifest["scope"] == "/"
+            for label, device in [("iphone", "iPhone 13"), ("android", "Pixel 7")]:
+                mobile_context = browser.new_context(**playwright.devices[device], color_scheme="dark")
+                mobile_context.route("**/api/**", respond)
+                mobile = mobile_context.new_page()
+                mobile.on("pageerror", lambda error: errors.append(str(error)))
+                mobile.goto(page.url)
+                expect(mobile.locator("#streamButton")).to_have_text("Stop streaming")
+                assert mobile.title() == "Vinyl Streamer"
+                assert "viewport-fit=cover" in mobile.locator('meta[name="viewport"]').get_attribute("content")
+                assert mobile.locator('meta[name="apple-mobile-web-app-capable"]').get_attribute("content") == "yes"
+                icon = mobile.locator('link[rel="apple-touch-icon"]').get_attribute("href")
+                assert mobile.request.get(page.url.rstrip("/") + icon).ok
+                assert mobile.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+                for control in ["#streamButton", "#themeToggle", "#volumeUp", "#muteButton"]:
+                    assert mobile.locator(control).bounding_box()["height"] >= 44
+                mobile.locator(".advanced > summary").click()
+                assert mobile.locator("#source").evaluate("el => getComputedStyle(el).fontSize") == "16px"
+                mobile.locator(".advanced > summary").click()
+                mobile.screenshot(path=str(artifacts / f"{label}-{args.engine}.png"), full_page=True)
+                size = mobile.viewport_size
+                mobile.set_viewport_size({"width": size["height"], "height": size["width"]})
+                assert mobile.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+                mobile_context.close()
             assert not errors, errors
             browser.close()
-            print("Browser checks passed: themes, saved/system preferences, restricted storage, discovery, streaming, volume, mobile layout and recovery.")
+            print("Browser checks passed: themes, streaming, recovery, home-screen metadata and iPhone/Android touch layouts.")
     finally:
         server.shutdown()
         server.server_close()

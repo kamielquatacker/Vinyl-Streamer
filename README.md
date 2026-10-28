@@ -2,7 +2,7 @@
 
 Stream your Raspberry Pi's USB audio input to a Bose SoundTouch or another compatible AirPlay speaker.
 
-Choose a speaker, start streaming, and control its volume or mute it. Audio input, buffer settings and technical details are under **Advanced**. A network-discovered speaker becomes selectable when the audio server exposes a usable output.
+Choose a speaker, start streaming, and control its volume or mute it. Audio input, buffer settings and technical details are under **Advanced**. A network-discovered speaker becomes selectable when the audio server exposes a usable output. The light/dark toggle follows your system setting until you choose a theme, then remembers your preference in this browser.
 
 ## Run
 

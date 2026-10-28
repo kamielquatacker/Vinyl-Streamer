@@ -33,7 +33,8 @@ def main() -> None:
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(executable_path=args.browser, headless=True)
-            page = browser.new_page(viewport={"width": 1100, "height": 1100}, device_scale_factor=1)
+            context = browser.new_context(viewport={"width": 1100, "height": 1100}, device_scale_factor=1, color_scheme="light")
+            page = context.new_page()
             errors = []
             page.on("pageerror", lambda error: errors.append(str(error)))
             sink = "raop_sink.192.168.1.20"
@@ -81,8 +82,48 @@ def main() -> None:
                     status["muted"] = body["muted"]
                 route.fulfill(status=code, content_type="application/json", body=json.dumps(data))
 
-            page.route("**/api/**", respond)
+            page.context.route("**/api/**", respond)
             page.goto(f"http://127.0.0.1:{server.server_port}/")
+            # Theme defaults follow the OS; an explicit choice persists across reloads/tabs.
+            theme = page.locator("html")
+            toggle = page.get_by_role("button", name="Donkere modus", exact=True)
+            expect(theme).to_have_attribute("data-theme", "light")
+            page.emulate_media(color_scheme="dark")
+            expect(theme).to_have_attribute("data-theme", "dark")
+            expect(toggle).to_have_attribute("aria-pressed", "true")
+            assert page.locator('meta[name="theme-color"]').get_attribute("content") == "#151a18"
+            toggle.click()
+            expect(theme).to_have_attribute("data-theme", "light")
+            page.emulate_media(color_scheme="light")
+            page.emulate_media(color_scheme="dark")
+            expect(theme).to_have_attribute("data-theme", "light")
+            page.reload()
+            expect(theme).to_have_attribute("data-theme", "light")
+            other = page.context.new_page()
+            other.goto(page.url)
+            expect(other.locator("html")).to_have_attribute("data-theme", "light")
+            toggle.focus()
+            toggle.press("Enter")
+            expect(theme).to_have_attribute("data-theme", "dark")
+            expect(other.locator("html")).to_have_attribute("data-theme", "dark")
+            other.close()
+            page.evaluate("localStorage.setItem('vinyl-streamer-theme', 'invalid')")
+            page.reload()
+            expect(theme).to_have_attribute("data-theme", "dark")
+            page.emulate_media(color_scheme="light")
+            expect(theme).to_have_attribute("data-theme", "light")
+
+            restricted = browser.new_context(color_scheme="dark")
+            restricted.add_init_script("Object.defineProperty(window, 'localStorage', {get() {throw new DOMException('Blocked', 'SecurityError');}})")
+            restricted.route("**/api/**", respond)
+            restricted_page = restricted.new_page()
+            restricted_page.on("pageerror", lambda error: errors.append(str(error)))
+            restricted_page.goto(page.url)
+            expect(restricted_page.locator("html")).to_have_attribute("data-theme", "dark")
+            restricted_page.get_by_role("button", name="Donkere modus", exact=True).click()
+            expect(restricted_page.locator("html")).to_have_attribute("data-theme", "light")
+            restricted.close()
+
             expect(page.locator(".speaker")).to_have_count(1)
             expect(page.locator(".speaker-state")).to_contain_text("audio-uitgang niet beschikbaar")
             expect(page.locator("#streamButton")).to_be_disabled()
@@ -139,6 +180,13 @@ def main() -> None:
             page.locator("#muteButton").click()
             expect(page.locator("#muteButton")).to_have_attribute("aria-pressed", "true")
             page.screenshot(path=str(artifacts / "desktop-streaming.png"), full_page=True)
+            toggle.click()
+            expect(theme).to_have_attribute("data-theme", "dark")
+            assert page.locator("body").evaluate("el => getComputedStyle(el).backgroundColor") == "rgb(21, 26, 24)"
+            assert page.locator(".speaker.selected").evaluate("el => getComputedStyle(el).backgroundColor") == "rgb(37, 58, 45)"
+            page.screenshot(path=str(artifacts / "desktop-dark.png"), full_page=True)
+            toggle.click()
+            expect(theme).to_have_attribute("data-theme", "light")
 
             flags["volume_error"] = True
             page.locator("#volumeDown").click()
@@ -179,6 +227,12 @@ def main() -> None:
             page.set_viewport_size({"width": 375, "height": 812})
             page.screenshot(path=str(artifacts / "mobile.png"), full_page=True)
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+            toggle.click()
+            expect(theme).to_have_attribute("data-theme", "dark")
+            page.screenshot(path=str(artifacts / "mobile-dark.png"), full_page=True)
+            page.set_viewport_size({"width": 320, "height": 812})
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+            page.set_viewport_size({"width": 375, "height": 812})
             page.locator("#streamButton").click()
             expect(page.locator("#status")).to_have_text("Stream actief")
             flags["status_error"] = True
@@ -189,7 +243,7 @@ def main() -> None:
             expect(page.locator("#streamButton")).to_be_enabled()
             assert not errors, errors
             browser.close()
-            print("Browser checks passed: discovery, errors, streaming, volume, mute, validation, mobile layout and recovery.")
+            print("Browser checks passed: themes, saved/system preferences, restricted storage, discovery, streaming, volume, mobile layout and recovery.")
     finally:
         server.shutdown()
         server.server_close()

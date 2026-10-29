@@ -124,3 +124,8 @@ footer > span:first-child { margin: 0 6px; }
 
 /* Avoid automatic input zoom on iPhone while preserving page zoom. */
 select, input[type="number"] { font-size: 16px; }
+
+.eq-panel { margin-top: 20px; }
+.eq-panel .section-heading { margin-bottom: 8px; }
+.eq-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); min-height: 44px; cursor: pointer; }
+.eq-label { display: block; color: var(--muted); font-size: 13px; margin-bottom: 8px; }

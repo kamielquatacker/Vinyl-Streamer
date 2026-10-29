@@ -159,6 +159,34 @@ systemctl --user start vinyl-streamer-app
 
 For the original manual installation, its service file may still be named `deploy/vinyl-streamer.service`; in that case copy it to `~/.config/systemd/user/vinyl-streamer-app.service` instead.
 
+## Equalizer presets
+
+The **Geluid** panel has an on/off switch and five presets. With the equalizer off, the original direct audio route is used. Enabling it requires **PipeWire 1.2+**, its built-in filter-chain module and the existing systemd user session. No additional Python dependencies or audio plugins are needed. PulseAudio-only installations retain direct streaming.
+
+| Preset | Sound |
+| --- | --- |
+| Neutraal | No tone correction |
+| Warm | Fuller bass, softer treble |
+| Meer bas | More emphasis on low frequencies |
+| Helder | More emphasis on detail |
+| Stemmen | More emphasis on voices |
+
+Each channel has five independent filters. Presets reduce the input level to reserve headroom; they can sound quieter. This is not a limiter, and boosting speaker volume above 100% can still distort. Changing a preset during playback briefly interrupts audio.
+
+Preferences are stored at `~/.config/vinyl-streamer/equalizer.json` (`XDG_CONFIG_HOME` is respected), separately from temporary stream state. `VINYL_EQ_SETTINGS_PATH` overrides this path. Choosing a preset while stopped saves it without starting audio.
+
+The app creates its own transient `vinyl-streamer-eq-*.service` user service and runtime configuration. These survive an API restart, allowing the app to recover control of an active stream. **Stop streaming** also stops the associated equalizer. Cleanup failures are reported and retried on subsequent status checks. The app does not restart PipeWire or change its global configuration.
+
+For diagnostics:
+
+```bash
+pipewire --version
+systemctl --user list-units 'vinyl-streamer-eq-*' --all --no-pager
+journalctl --user -u 'vinyl-streamer-eq-*' -n 60 --no-pager
+```
+
+After updating, test all presets on the actual Pi and speaker, including Stop/Start, volume, mute and restarting the API during playback. Automated tests cover route recovery; an isolated Linux PipeWire audio test also checked all five presets and stereo separation. Actual Pi load and audible AirPlay playback still need a hardware check.
+
 ## iPhone and Android home screen
 
 Use the same Pi address consistently: browser preferences and home-screen apps belong to the exact address (origin) you opened. The Pi and phone must be on the same reachable network.

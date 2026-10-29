@@ -52,7 +52,14 @@ def main() -> None:
                 "warnings": [], "discovering": False,
             }
             status = {"running": False, "sink": None, "source": None, "latency_ms": 80, "volume": None, "muted": None, "warnings": []}
-            flags = {"connect_error": False, "disconnect_error": False, "status_error": False, "volume_error": False}
+            flags = {"connect_error": False, "disconnect_error": False, "status_error": False, "volume_error": False, "eq_error": False}
+            status["equalizer"] = {
+                "enabled": False, "preset": "neutral", "active": False, "available": True, "preamp_db": 0,
+                "presets": [{"id": key, "name": name, "description": description} for key, name, description in [
+                    ("neutral", "Neutraal", "Geen tooncorrectie."), ("warm", "Warm", "Wat voller laag en zachter hoog."),
+                    ("bass", "Meer bas", "Meer nadruk op de lage tonen."), ("clear", "Helder", "Meer nadruk op details."),
+                    ("voices", "Stemmen", "Meer nadruk op stemmen.")]],
+            }
             calls = []
 
             def respond(route):
@@ -70,12 +77,21 @@ def main() -> None:
                     else:
                         status.update(running=True, sink=body["sink"], source=body["source"] or source,
                                       latency_ms=body["latency_ms"], volume=37, muted=False)
+                        status["equalizer"]["active"] = status["equalizer"]["enabled"]
                         data = status
                 elif path == "disconnect":
                     if flags["disconnect_error"]:
                         code, data = 503, {"detail": "Stoppen mislukt. Probeer opnieuw."}
                     else:
                         status.update(running=False, volume=None, muted=None)
+                        status["equalizer"]["active"] = False
+                        data = status
+                elif path == "equalizer":
+                    if flags["eq_error"]:
+                        code, data = 503, {"detail": "Equaliser kon niet starten"}
+                    else:
+                        status["equalizer"].update(enabled=body["enabled"], preset=body["preset"],
+                            active=body["enabled"] and status["running"], preamp_db=-3 if body["preset"] == "warm" else 0)
                         data = status
                 elif path == "volume":
                     if flags["volume_error"]:
@@ -157,6 +173,24 @@ def main() -> None:
             expect(page.locator("#volumeValue")).to_have_text("37%")
             expect(page.locator("#source")).to_be_disabled()
             expect(page.locator("#latency")).to_be_disabled()
+
+            # Presets can be changed on a live stream; failure preserves the old state.
+            expect(page.locator("#eqEnabled")).to_be_enabled()
+            page.locator("#eqPreset").select_option("warm")
+            expect(page.locator("#eqPreset")).to_be_enabled()
+            page.locator("#eqEnabled").check()
+            expect(page.locator("#eqEnabled")).to_be_checked()
+            expect(page.locator("#eqHint")).to_contain_text("zachter")
+            flags["eq_error"] = True
+            page.locator("#eqPreset").select_option("bass")
+            expect(page.locator("#eqError")).to_have_text("Equaliser kon niet starten")
+            expect(page.locator("#eqPreset")).to_have_value("warm")
+            flags["eq_error"] = False
+            page.locator("#eqPreset").select_option("clear")
+            expect(page.locator("#eqPreset")).to_have_value("clear")
+            expect(page.locator("#eqError")).to_be_hidden()
+            page.locator("#eqEnabled").uncheck()
+            expect(page.locator("#eqHint")).to_contain_text("rechtstreeks")
 
             # A slow status read must not overwrite a newer volume change.
             page.evaluate("""() => {
@@ -276,7 +310,7 @@ def main() -> None:
                 mobile_context.close()
             assert not errors, errors
             browser.close()
-            print("Browser checks passed: themes, streaming, recovery, home-screen metadata and iPhone/Android touch layouts.")
+            print("Browser checks passed: equalizer presets, themes, streaming, recovery, home-screen metadata and iPhone/Android touch layouts.")
     finally:
         server.shutdown()
         server.server_close()

@@ -4,7 +4,7 @@ const model = {
   status: { running: false }, online: false, loaded: false, busy: false,
   refreshing: false, polling: false, volumePending: null, volumeWorking: false,
   volumeTimer: null, editingVolume: false, discoveryTimer: null,
-  revision: 0, muteWorking: false,
+  revision: 0, muteWorking: false, eqWorking: false, eqDraft: null,
 };
 
 function message(id, text = '') {
@@ -88,7 +88,7 @@ function renderSpeakers() {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `speaker${selected ? ' selected' : ''}${speaker.ready ? '' : ' unavailable'}`;
-    button.disabled = model.busy || model.status.running || !speaker.ready;
+    button.disabled = model.busy || model.eqWorking || model.status.running || !speaker.ready;
     button.dataset.sink = speaker.id;
     button.setAttribute('aria-pressed', String(selected));
     const icon = document.createElement('span');
@@ -151,15 +151,15 @@ function render() {
     : 'Kies een speaker en zet je plaat op.';
   $('streamButton').textContent = busy ? 'Even geduld…' : status.running ? 'Stop streaming' : 'Start streaming';
   $('streamButton').classList.toggle('stop', status.running);
-  $('streamButton').disabled = busy || !online || !status.running && (!ready || !devices.sources.length);
+  $('streamButton').disabled = busy || model.eqWorking || !online || !status.running && (!ready || !devices.sources.length);
   $('startHint').textContent = status.running ? 'De Pi stuurt audio naar deze uitgang.'
     : !model.loaded ? 'Apparaten worden opgehaald.' : !devices.sources.length ? 'Sluit eerst een audio-input aan.'
     : !ready ? 'Kies een beschikbare speaker om te starten.' : '';
-  $('source').disabled = busy || status.running || !devices.sources.length;
-  $('latency').disabled = busy || status.running;
+  $('source').disabled = busy || model.eqWorking || status.running || !devices.sources.length;
+  $('latency').disabled = busy || model.eqWorking || status.running;
   $('refreshButton').disabled = model.refreshing;
   $('refreshButton').textContent = model.refreshing ? 'Zoeken…' : 'Vernieuwen';
-  $('volumeControls').disabled = busy || !online || !status.running || status.volume == null;
+  $('volumeControls').disabled = busy || model.eqWorking || !online || !status.running || status.volume == null;
   $('volumeTarget').textContent = status.running ? `Actieve speaker: ${speakerName(status.sink)}` : 'Beschikbaar tijdens streaming.';
   if (!model.volumePending && !model.volumeWorking && !model.editingVolume) {
     const volume = status.running ? status.volume : null;
@@ -175,10 +175,62 @@ function render() {
   $('muteButton').setAttribute('aria-pressed', String(Boolean(status.muted)));
   renderSpeakers();
   renderDetails();
+  renderEqualizer();
+}
+
+function renderEqualizer() {
+  const settings = model.eqDraft || model.status.equalizer;
+  const available = model.status.equalizer?.available;
+  const presets = model.status.equalizer?.presets || [];
+  const select = $('eqPreset');
+  if (JSON.stringify(presets) !== select.dataset.presets) {
+    select.replaceChildren();
+    presets.forEach(preset => {
+      const option = document.createElement('option');
+      option.value = preset.id;
+      option.textContent = preset.name;
+      select.append(option);
+    });
+    select.dataset.presets = JSON.stringify(presets);
+  }
+  $('eqEnabled').checked = Boolean(settings?.enabled);
+  if (settings?.preset) select.value = settings.preset;
+  const disabled = model.busy || model.eqWorking || model.volumeWorking || model.muteWorking || !model.online || !available;
+  $('eqEnabled').disabled = model.busy || model.eqWorking || model.volumeWorking || model.muteWorking || !model.online || (!available && !settings?.enabled);
+  select.disabled = disabled;
+  const preset = presets.find(item => item.id === settings?.preset);
+  $('eqHint').textContent = model.eqWorking ? 'Geluid aanpassen...'
+    : !model.status.equalizer ? 'Instellingen ophalen...'
+    : !available ? 'Equaliser vereist PipeWire en een gebruikerssessie op de Pi.'
+    : !settings?.enabled ? 'Uit. Je audio gaat rechtstreeks naar de speaker.'
+    : !model.status.running ? `${preset?.description || ''} Wordt toegepast bij starten.`
+    : !model.status.equalizer.active ? 'Equaliser niet beschikbaar. Schakel uit of start streaming opnieuw.'
+    : `${preset?.description || ''} ${model.status.equalizer.preamp_db < 0 ? 'Kan iets zachter klinken om vervorming te voorkomen. ' : ''}Bij wisselen kan de audio kort onderbreken.`;
+}
+
+async function configureEqualizer() {
+  if (model.eqWorking || model.busy) return;
+  model.eqDraft = { enabled: $('eqEnabled').checked, preset: $('eqPreset').value };
+  model.eqWorking = true;
+  model.revision++;
+  render();
+  try {
+    model.status = await api('/api/equalizer', model.eqDraft);
+    message('eqError');
+    message('streamWarning', (model.status.warnings || []).join(' '));
+  } catch (error) {
+    message('eqError', error.message);
+  } finally {
+    model.revision++;
+    model.eqDraft = null;
+    model.eqWorking = false;
+    render();
+    await refreshStatus();
+  }
 }
 
 async function refreshStatus() {
-  if (model.polling || model.busy || model.volumeWorking || model.volumePending || model.muteWorking) return;
+  if (model.polling || model.busy || model.eqWorking || model.volumeWorking || model.volumePending || model.muteWorking) return;
   model.polling = true;
   const revision = model.revision;
   try {
@@ -329,6 +381,8 @@ async function toggleMute() {
   }
 }
 
+$('eqEnabled').addEventListener('change', configureEqualizer);
+$('eqPreset').addEventListener('change', configureEqualizer);
 $('streamButton').addEventListener('click', toggleStream);
 $('refreshButton').addEventListener('click', refreshDevices);
 $('volume').addEventListener('input', event => queueVolume(event.target.value));

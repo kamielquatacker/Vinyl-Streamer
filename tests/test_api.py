@@ -110,3 +110,17 @@ def test_apple_icon_and_browser_favicon_are_served(client):
     favicon = client.get("/favicon.ico")
     assert favicon.status_code == 200
     assert favicon.content[:6] == bytes.fromhex("000001000100")
+
+
+def test_equalizer_settings_apply_and_invalid_presets_are_rejected(client, backend):
+    response = client.post("/api/equalizer", json={"enabled": True, "preset": "warm"})
+    assert response.status_code == 200
+    assert response.json()["equalizer"]["enabled"]
+    assert not response.json()["equalizer"]["active"]
+    assert client.post("/api/equalizer", json={"enabled": True, "preset": "unknown"}).status_code == 422
+    assert client.post("/api/connect", json={"sink": backend.sinks[0].name}).status_code == 200
+    status = client.get("/api/status").json()
+    assert status["equalizer"]["active"] and status["equalizer"]["preset"] == "warm"
+    assert status["volume"] == 37
+    assert client.post("/api/disconnect").status_code == 200
+    assert backend.eq_stops

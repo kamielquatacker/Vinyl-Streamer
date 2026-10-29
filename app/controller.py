@@ -23,7 +23,7 @@ class StreamController:
         self.engine = equalizer.EqualizerEngine()
         self.eq_settings = equalizer.load_settings()
         if self.state.running and self.state.eq_unit:
-            self.eq_settings = equalizer.Settings(True, self.state.eq_preset, self.state.eq_bands or self.eq_settings.bands)
+            self.eq_settings = equalizer.Settings(True, self.state.eq_preset, equalizer.migrate_bands(self.state.eq_bands or self.eq_settings.bands))
         self.persistence_warning: str | None = None
         self.preferences_warning: str | None = None
         self.stream_warning: str | None = None

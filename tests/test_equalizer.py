@@ -32,7 +32,7 @@ def test_enabled_equalizer_routes_stereo_and_keeps_volume_on_speaker(backend):
     assert status["equalizer"]["active"]
     assert backend.starts[0][1] == status["eq_sink"]
     assert status["sink"] == backend.eq_starts[0][1]
-    assert -3 < status["equalizer"]["preamp_db"] < -2
+    assert -5 < status["equalizer"]["preamp_db"] < -3
     backend.controller.set_volume(volume=45)
     assert backend.volumes == [(status["sink"], 45)]
 
@@ -164,8 +164,8 @@ def test_configuration_has_separate_stereo_filters_and_no_speaker_fallback():
     args = config["context.modules"][-1]["args"]
     graph = args["filter.graph"]
     assert len(graph["inputs"]) == len(graph["outputs"]) == 2
-    assert len(graph["nodes"]) == 12
-    assert len(graph["links"]) == 10
+    assert len(graph["nodes"]) == 14
+    assert len(graph["links"]) == 12
     assert args["playback.props"]["target.object"] == "raop_sink.bose"
     assert args["playback.props"]["node.dont-fallback"]
     assert args["playback.props"]["node.dont-reconnect"]
@@ -255,23 +255,23 @@ def test_native_engine_cleanup_of_collected_unit_is_idempotent(monkeypatch, tmp_
 
 
 def test_custom_bands_survive_restart_and_preset_roundtrip(backend):
-    bands = [3, 1, -2, 0.5, -1]
+    bands = [3, 1, -2, 0.5, -1, 0]
     backend.controller.configure_equalizer(True, "custom", bands)
     start(backend)
     restored = controller.StreamController()
     assert restored.status()["equalizer"]["bands"] == bands
     original = restored.state.eq_unit
-    restored.configure_equalizer(True, "custom", [2, 1, -2, 0.5, -1])
+    restored.configure_equalizer(True, "custom", [2, 1, -2, 0.5, -1, 0])
     assert restored.state.eq_unit != original
     restored.configure_equalizer(True, "warm")
     restored.configure_equalizer(True, "custom")
-    assert restored.status()["equalizer"]["bands"] == [2, 1, -2, 0.5, -1]
+    assert restored.status()["equalizer"]["bands"] == [2, 1, -2, 0.5, -1, 0]
     assert len(backend.modules) == 1
     assert not backend.volumes and not backend.mutes
 
 
 def test_custom_route_failure_preserves_old_bands(backend, monkeypatch):
-    bands = [1, 0, -1, 0, 0]
+    bands = [1, 0, -1, 0, 0, 0]
     backend.controller.configure_equalizer(True, "custom", bands)
     start(backend)
     original = audio.start_loopback
@@ -281,7 +281,7 @@ def test_custom_route_failure_preserves_old_bands(backend, monkeypatch):
         return original(source, sink, latency)
     monkeypatch.setattr(audio, "start_loopback", fail_new)
     with pytest.raises(RuntimeError):
-        backend.controller.configure_equalizer(True, "custom", [2, 0, 0, 0, 0])
+        backend.controller.configure_equalizer(True, "custom", [2, 0, 0, 0, 0, 0])
     status = backend.controller.status()
     assert status["equalizer"]["bands"] == bands
     assert status["eq_bands"] == bands and status["running"]
@@ -292,22 +292,88 @@ def test_old_preferences_remain_compatible(backend):
     assert equalizer.load_settings() == equalizer.Settings(True, "warm")
 
 
-@pytest.mark.parametrize("bands", [[0]*4, [0]*6, [7,0,0,0,0], [float("nan")]*5, [True]*5, "invalid"])
+@pytest.mark.parametrize("bands", [[0]*5, [0]*7, [13,0,0,0,0,0], [float("nan")]*6, [True]*6, "invalid"])
 def test_invalid_custom_bands_rejected(bands):
     with pytest.raises(ValueError):
         equalizer.Settings(True, "custom", bands)
 
 
 def test_headroom_uses_combined_response_instead_of_summing_boosts():
-    assert equalizer.preamp_db("custom", [0]*5) == 0
-    assert equalizer.preamp_db("custom", [-6]*5) == 0
-    assert equalizer.preamp_db("custom", [0,0,6,0,0]) == -6.2
-    assert -15 < equalizer.preamp_db("custom", [6]*5) < -6
-    assert equalizer.preamp_db("voices") > -3
+    assert equalizer.preamp_db("custom", [0]*6) == 0
+    assert equalizer.preamp_db("custom", [-6]*6) == 0
+    assert equalizer.preamp_db("custom", [0,0,0,6,0,0]) == -6.2
+    assert -15 < equalizer.preamp_db("custom", [6]*6) < -6
+    assert -6 < equalizer.preamp_db("voices") < -3
 
 
 def test_custom_graph_uses_requested_bands_on_both_channels():
-    bands = [-2, 1, 3, -1, 0.5]
+    bands = [-2, 1, 3, -1, 0.5, 0]
     args = equalizer.filter_config(equalizer.new_unit(), "raop_sink.bose", "custom", bands)["context.modules"][-1]["args"]
     graph = args["filter.graph"]
     assert [node["control"]["Gain"] for node in graph["nodes"] if node["label"] == "bq_peaking"] == bands * 2
+
+
+
+def test_saved_five_band_custom_preferences_migrate_without_reset(backend):
+    equalizer.SETTINGS_PATH.write_text(json.dumps({"enabled": True, "preset": "custom", "bands": [0,2,4,2,0]}))
+    settings = equalizer.load_settings()
+    assert settings.enabled and settings.preset == "custom"
+    assert settings.bands == (0, 1.5, 2.5, 4, 2.5, 0)
+    equalizer.save_settings(settings)
+    assert equalizer.load_settings() == settings
+
+
+def test_old_live_custom_route_can_be_controlled_and_upgraded(backend):
+    backend.controller.configure_equalizer(True, "custom", [0]*6)
+    start(backend)
+    backend.controller.state.eq_bands = [0,2,4,2,0]
+    state.save_state(backend.controller.state)
+    restored = controller.StreamController()
+    assert restored.state.eq_bands == [0,2,4,2,0]
+    assert restored.status()["running"]
+    old = restored.state.eq_unit
+    response = restored.configure_equalizer(True, "custom")
+    assert response["eq_bands"] == [0,1.5,2.5,4,2.5,0]
+    assert response["eq_unit"] != old
+    assert len(backend.modules) == 1
+
+
+def test_graph_has_six_requested_frequencies_per_channel():
+    graph = equalizer.filter_config(equalizer.new_unit(), "raop_sink.bose", "neutral")["context.modules"][-1]["args"]["filter.graph"]
+    assert [node["control"]["Freq"] for node in graph["nodes"] if node["label"] == "bq_peaking"] == [60,150,400,1000,2400,15000]*2
+
+
+
+def test_full_ten_db_range_is_preserved_and_receives_headroom(backend):
+    bands = [10, -10, 0, 4, -3, 10]
+    backend.controller.configure_equalizer(True, "custom", bands)
+    start(backend)
+    assert backend.controller.status()["equalizer"]["bands"] == bands
+    assert equalizer.load_settings().bands == tuple(bands)
+    config = equalizer.filter_config(equalizer.new_unit(), "raop_sink.bose", "custom", bands)
+    nodes = config["context.modules"][-1]["args"]["filter.graph"]["nodes"]
+    assert [node["control"]["Gain"] for node in nodes if node["label"] == "bq_peaking"] == bands * 2
+    assert all(0 < node["control"]["Mult"] < 1 for node in nodes if node["label"] == "linear")
+    assert equalizer.preamp_db("custom", [-10]*6) == 0
+
+
+
+def test_saved_twelve_db_preferences_clamp_without_losing_custom(backend):
+    equalizer.SETTINGS_PATH.write_text(json.dumps({"enabled": True, "preset": "custom", "bands": [12,-12,4,-3,0,11]}))
+    settings = equalizer.load_settings()
+    assert settings == equalizer.Settings(True, "custom", [10,-10,4,-3,0,10])
+
+
+def test_twelve_db_live_route_remains_controllable_during_update(backend):
+    backend.controller.configure_equalizer(True, "custom", [0]*6)
+    start(backend)
+    backend.controller.state.eq_bands = [12,-12,4,-3,0,11]
+    state.save_state(backend.controller.state)
+    restored = controller.StreamController()
+    assert restored.status()["running"]
+    assert restored.eq_settings.bands == (10,-10,4,-3,0,10)
+    old = restored.state.eq_unit
+    result = restored.configure_equalizer(True, "custom")
+    assert result["eq_bands"] == [10,-10,4,-3,0,10]
+    assert result["eq_unit"] != old
+    assert len(backend.modules) == 1

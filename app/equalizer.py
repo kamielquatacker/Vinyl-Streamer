@@ -15,17 +15,17 @@ from dataclasses import asdict, dataclass
 from uuid import uuid4
 
 from app import audio
+from app.bands import FREQUENCIES, migrate_bands, valid_bands
 from app.state import atomic_write_json, atomic_write_text
 
 logger = logging.getLogger(__name__)
-FREQUENCIES = (60, 250, 1000, 4000, 12000)
 PRESETS = {
-    "custom": {"name": "Custom", "description": "Je eigen klankinstelling.", "gains": (0, 0, 0, 0, 0)},
-    "neutral": {"name": "Neutraal", "description": "Geen tooncorrectie.", "gains": (0, 0, 0, 0, 0)},
-    "warm": {"name": "Warm", "description": "Wat voller laag en zachter hoog.", "gains": (2, 1, 0, -1, -2)},
-    "bass": {"name": "Meer bas", "description": "Meer nadruk op de lage tonen.", "gains": (4, 2, 0, 0, -1)},
-    "clear": {"name": "Helder", "description": "Meer nadruk op details.", "gains": (-1, -1, 0, 2, 1)},
-    "voices": {"name": "Stemmen", "description": "Meer nadruk op stemmen en verstaanbaarheid.", "gains": (-3, -1, 2, 2, -1)},
+    "custom": {"name": "Custom", "description": "Je eigen klankinstelling.", "gains": (0, 0, 0, 0, 0, 0)},
+    "neutral": {"name": "Neutraal", "description": "Geen tooncorrectie.", "gains": (0, 0, 0, 0, 0, 0)},
+    "warm": {"name": "Warm", "description": "Vol laag en duidelijk zachter hoog.", "gains": (3, 2, 1, 0, -1.5, -4)},
+    "bass": {"name": "Meer bas", "description": "Een stevige boost voor de lage tonen.", "gains": (6, 4, 2, 0, -1, -2)},
+    "clear": {"name": "Helder", "description": "Fris hoog en minder nadruk op het laag.", "gains": (-2, -1.5, -1, 0, 3, 2.5)},
+    "voices": {"name": "Stemmen", "description": "Stemmen naar voren, met minder laag.", "gains": (-4, -2.5, -1, 3, 3, -2)},
 }
 SETTINGS_PATH = Path(os.environ.get(
     "VINYL_EQ_SETTINGS_PATH",
@@ -38,13 +38,11 @@ UNIT_PATTERN = re.compile(r"vinyl-streamer-eq-([0-9a-f]{32})\.service")
 class Settings:
     enabled: bool = False
     preset: str = "neutral"
-    bands: tuple[float, ...] = (0, 0, 0, 0, 0)
+    bands: tuple[float, ...] = (0, 0, 0, 0, 0, 0)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.bands, (list, tuple)) or len(self.bands) != 5 or any(
-            type(value) not in (int, float) or not math.isfinite(value) or not -6 <= value <= 6 for value in self.bands
-        ):
-            raise ValueError("Kies vijf equaliserbanden tussen -6 en +6 dB.")
+        if not valid_bands(self.bands):
+            raise ValueError("Kies zes equaliserbanden tussen -10 en +10 dB.")
         object.__setattr__(self, "bands", tuple(self.bands))
         if type(self.enabled) is not bool or self.preset not in PRESETS:
             raise ValueError("Ongeldige equaliserinstelling.")
@@ -57,7 +55,10 @@ class Settings:
 def load_settings() -> Settings:
     try:
         if SETTINGS_PATH.exists():
-            return Settings(**json.loads(SETTINGS_PATH.read_text(encoding="utf-8")))
+            data = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+            if "bands" in data:
+                data["bands"] = migrate_bands(data["bands"])
+            return Settings(**data)
     except (OSError, ValueError, TypeError):
         logger.warning("Could not load equalizer preferences", exc_info=True)
     return Settings()
@@ -79,7 +80,7 @@ def processing_sink(unit: str) -> str:
 
 
 def gains_for(preset: str, bands=None) -> tuple:
-    return Settings(preset=preset, bands=bands if bands is not None else (0, 0, 0, 0, 0)).gains
+    return Settings(preset=preset, bands=bands if bands is not None else (0, 0, 0, 0, 0, 0)).gains
 
 
 @lru_cache(maxsize=128)

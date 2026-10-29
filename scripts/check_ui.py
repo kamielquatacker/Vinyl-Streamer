@@ -53,10 +53,10 @@ def main() -> None:
             }
             status = {"running": False, "sink": None, "source": None, "latency_ms": 80, "volume": None, "muted": None, "warnings": []}
             flags = {"connect_error": False, "disconnect_error": False, "status_error": False, "volume_error": False, "eq_error": False}
-            preset_bands = {"custom": [0]*5, "neutral": [0]*5, "warm": [2,1,0,-1,-2],
-                            "bass": [4,2,0,0,-1], "clear": [-1,-1,0,2,1], "voices": [-3,-1,2,2,-1]}
+            preset_bands = {"custom": [0]*6, "neutral": [0]*6, "warm": [3,2,1,0,-1.5,-4],
+                            "bass": [6,4,2,0,-1,-2], "clear": [-2,-1.5,-1,0,3,2.5], "voices": [-4,-2.5,-1,3,3,-2]}
             status["equalizer"] = {
-                "enabled": False, "preset": "neutral", "active": False, "available": True, "preamp_db": 0, "bands": [0]*5, "custom_bands": [0]*5,
+                "enabled": False, "preset": "neutral", "active": False, "available": True, "preamp_db": 0, "bands": [0]*6, "custom_bands": [0]*6,
                 "presets": [{"id": key, "name": name, "description": description} for key, name, description in [
                     ("custom", "Custom", "Je eigen klankinstelling."), ("neutral", "Neutraal", "Geen tooncorrectie."), ("warm", "Warm", "Wat voller laag en zachter hoog."),
                     ("bass", "Meer bas", "Meer nadruk op de lage tonen."), ("clear", "Helder", "Meer nadruk op details."),
@@ -179,6 +179,10 @@ def main() -> None:
             expect(page.locator("#latency")).to_be_disabled()
 
             # Presets can be changed on a live stream; failure preserves the old state.
+            expect(page.locator(".eq-band input")).to_have_count(6)
+            for index in range(6):
+                expect(page.locator(f"#eqBand{index}")).to_have_attribute("min", "-10")
+                expect(page.locator(f"#eqBand{index}")).to_have_attribute("max", "10")
             expect(page.locator("#eqEnabled")).to_be_enabled()
             page.locator("#eqPreset").select_option("warm")
             expect(page.locator("#eqPreset")).to_be_enabled()
@@ -193,7 +197,7 @@ def main() -> None:
             page.locator("#eqPreset").select_option("clear")
             expect(page.locator("#eqPreset")).to_have_value("clear")
             expect(page.locator("#eqError")).to_be_hidden()
-            expect(page.locator("#eqBand3")).to_have_value("2")
+            expect(page.locator("#eqBand4")).to_have_value("3")
             before = len([call for call in calls if call[0] == "equalizer"])
             page.locator("#eqBand0").evaluate("""el => {
                 el.value = 1; el.dispatchEvent(new Event('input', {bubbles:true}));
@@ -204,7 +208,7 @@ def main() -> None:
             assert len([call for call in calls if call[0] == "equalizer"]) == before
             page.locator("#eqBand0").dispatch_event("change")
             expect(page.locator("#eqBand0")).to_be_enabled()
-            assert status["equalizer"]["bands"] == [2.5,-1,0,2,1]
+            assert status["equalizer"]["bands"] == [2.5,-1.5,-1,0,3,2.5]
             assert len([call for call in calls if call[0] == "equalizer"]) == before + 1
             page.reload()
             expect(page.locator("#eqBand0")).to_have_value("2.5")
@@ -212,6 +216,20 @@ def main() -> None:
             page.locator("#eqBand0").press("ArrowUp")
             expect(page.locator("#eqBand0")).to_have_value("3")
             expect(page.locator("#eqBand0")).to_be_enabled()
+            # The full column accepts a drag beside the track and captures movement outside it.
+            page.locator("#eqBand0").scroll_into_view_if_needed()
+            rect = page.locator("#eqBand0").bounding_box()
+            before = len([call for call in calls if call[0] == "equalizer"])
+            page.mouse.move(rect["x"] + 3, rect["y"] + 140)
+            page.mouse.down()
+            page.mouse.move(rect["x"] - 30, rect["y"] + 59)
+            expect(page.locator("#eqBand0")).to_have_value("4")
+            assert len([call for call in calls if call[0] == "equalizer"]) == before
+            page.mouse.up()
+            expect(page.locator("#eqBand0")).to_be_enabled()
+            assert status["equalizer"]["bands"][0] == 4
+            assert len([call for call in calls if call[0] == "equalizer"]) == before + 1
+            assert page.locator("#eqCurvePath").get_attribute("d").count(" C ") == 5
             page.locator("#eqEnabled").uncheck()
             expect(page.locator("#eqHint")).to_contain_text("rechtstreeks")
 
@@ -328,6 +346,22 @@ def main() -> None:
                     assert mobile.locator(control).bounding_box()["height"] >= 44
                 band_box = mobile.locator("#eqBand0").bounding_box()
                 assert band_box["width"] >= 44 and band_box["height"] > band_box["width"]
+                assert mobile.locator("#eqBand0").evaluate("el => getComputedStyle(el).touchAction") == "none"
+                mute_box = mobile.locator("#muteButton").bounding_box()
+                output_box = mobile.locator("#volumeValue").bounding_box()
+                assert abs(mute_box["y"] + mute_box["height"]/2 - output_box["y"] - output_box["height"]/2) < 2
+                if args.engine == "chromium":
+                    mobile.locator("#eqBand0").scroll_into_view_if_needed()
+                    rect = mobile.locator("#eqBand0").bounding_box()
+                    scroll_y = mobile.evaluate("window.scrollY")
+                    cdp = mobile_context.new_cdp_session(mobile)
+                    cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": rect["x"]+3, "y": rect["y"]+140}]})
+                    cdp.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [{"x": rect["x"]-10, "y": rect["y"]+59}]})
+                    cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+                    expect(mobile.locator("#eqBand0")).to_have_value("4")
+                    expect(mobile.locator("#eqBand0")).to_be_enabled()
+                    assert abs(mobile.evaluate("window.scrollY") - scroll_y) < 1
+                    cdp.detach()
                 mobile.locator(".advanced > summary").click()
                 assert mobile.locator("#source").evaluate("el => getComputedStyle(el).fontSize") == "16px"
                 mobile.locator(".advanced > summary").click()

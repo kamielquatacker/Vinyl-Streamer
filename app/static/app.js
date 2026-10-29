@@ -1,4 +1,6 @@
 const $ = id => document.getElementById(id);
+const BAND_COUNT = 6;
+const EQ_THUMB_RADIUS = 12;
 const model = {
   devices: { sinks: [], sources: [], airplay: [] }, speakers: [], selected: '',
   status: { running: false }, online: false, loaded: false, busy: false,
@@ -152,7 +154,7 @@ function render() {
   $('streamButton').textContent = busy ? 'Even geduld…' : status.running ? 'Stop streaming' : 'Start streaming';
   $('streamButton').classList.toggle('stop', status.running);
   $('streamButton').disabled = busy || model.eqWorking || !online || !status.running && (!ready || !devices.sources.length);
-  $('startHint').textContent = status.running ? 'De Pi stuurt audio naar deze uitgang.'
+  $('startHint').textContent = status.running ? ''
     : !model.loaded ? 'Apparaten worden opgehaald.' : !devices.sources.length ? 'Sluit eerst een audio-input aan.'
     : !ready ? 'Kies een beschikbare speaker om te starten.' : '';
   $('source').disabled = busy || model.eqWorking || status.running || !devices.sources.length;
@@ -160,7 +162,7 @@ function render() {
   $('refreshButton').disabled = model.refreshing;
   $('refreshButton').textContent = model.refreshing ? 'Zoeken…' : 'Vernieuwen';
   $('volumeControls').disabled = busy || model.eqWorking || !online || !status.running || status.volume == null;
-  $('volumeTarget').textContent = status.running ? `Actieve speaker: ${speakerName(status.sink)}` : 'Beschikbaar tijdens streaming.';
+  $('volumeTarget').textContent = status.running ? '' : 'Beschikbaar tijdens streaming.';
   if (!model.volumePending && !model.volumeWorking && !model.editingVolume) {
     const volume = status.running ? status.volume : null;
     $('volumeValue').textContent = volume == null ? '—' : `${volume}%`;
@@ -175,6 +177,7 @@ function render() {
   $('muteButton').setAttribute('aria-label', muteLabel);
   $('muteButton').title = muteLabel;
   $('muteButton').setAttribute('aria-pressed', String(Boolean(status.muted)));
+  $('muteButton').disabled = $('volumeControls').disabled || model.muteWorking;
   renderSpeakers();
   renderDetails();
   renderEqualizer();
@@ -201,7 +204,7 @@ function renderEqualizer() {
   const disabled = model.busy || model.eqWorking || model.volumeWorking || model.muteWorking || !model.online || !available;
   $('eqEnabled').disabled = model.busy || model.eqWorking || model.volumeWorking || model.muteWorking || !model.online || (!available && !settings?.enabled);
   select.disabled = disabled;
-  const bands = settings?.bands || [0, 0, 0, 0, 0];
+  const bands = settings?.bands || Array(BAND_COUNT).fill(0);
   bands.forEach((gain, index) => {
     const slider = $(`eqBand${index}`);
     slider.disabled = disabled;
@@ -210,6 +213,8 @@ function renderEqualizer() {
     slider.setAttribute('aria-valuetext', label);
     $(`eqBandValue${index}`).textContent = label;
   });
+  $('eqGraph').classList.toggle('unavailable', disabled);
+  renderEqualizerCurve();
   const preset = presets.find(item => item.id === settings?.preset);
   $('eqHint').textContent = model.eqWorking ? 'Geluid aanpassen...'
     : !model.status.equalizer ? 'Instellingen ophalen...'
@@ -224,7 +229,7 @@ async function configureEqualizer() {
   if (model.eqWorking || model.busy) return;
   const preset = $('eqPreset').value;
   model.eqDraft = { enabled: $('eqEnabled').checked, preset,
-    bands: model.eqBandsDraft || model.status.equalizer?.custom_bands || [0, 0, 0, 0, 0] };
+    bands: model.eqBandsDraft || model.status.equalizer?.custom_bands || Array(BAND_COUNT).fill(0) };
   model.eqWorking = true;
   model.revision++;
   render();
@@ -396,14 +401,83 @@ async function toggleMute() {
   }
 }
 
-for (let index = 0; index < 5; index++) {
-  $(`eqBand${index}`).addEventListener('input', () => {
+// Monotone cubic interpolation joins the control positions without overshoot.
+function renderEqualizerCurve() {
+  const box = $('eqGraph').getBoundingClientRect();
+  if (!box.width || !box.height) return;
+  const points = Array.from({ length: BAND_COUNT }, (_, index) => {
+    const slider = $(`eqBand${index}`);
+    const rect = slider.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2 - box.left,
+      y: rect.top - box.top + EQ_THUMB_RADIUS + (Number(slider.max) - Number(slider.value)) / (Number(slider.max) - Number(slider.min)) * (rect.height - 2 * EQ_THUMB_RADIUS) };
+  });
+  const slopes = points.slice(1).map((point, i) => (point.y - points[i].y) / (point.x - points[i].x));
+  const tangents = points.map((_, i) => {
+    if (!i) return slopes[0];
+    if (i === points.length - 1) return slopes.at(-1);
+    return slopes[i - 1] * slopes[i] <= 0 ? 0 : 2 / (1 / slopes[i - 1] + 1 / slopes[i]);
+  });
+  let path = `M ${points[0].x} ${points[0].y}`;
+  points.slice(1).forEach((point, i) => {
+    const previous = points[i];
+    const width = (point.x - previous.x) / 3;
+    path += ` C ${previous.x + width} ${previous.y + width * tangents[i]}, ${point.x - width} ${point.y - width * tangents[i + 1]}, ${point.x} ${point.y}`;
+  });
+  $('eqCurve').setAttribute('viewBox', `0 0 ${box.width} ${box.height}`);
+  $('eqCurvePath').setAttribute('d', path);
+}
+
+// Capture the whole slider column, including touches beside the visible track.
+// Native range inputs still provide keyboard and screen-reader controls.
+let eqPointer = null;
+for (let index = 0; index < BAND_COUNT; index++) {
+  const slider = $(`eqBand${index}`);
+  const move = event => {
+    const rect = slider.getBoundingClientRect();
+    const fraction = (event.clientY - rect.top - EQ_THUMB_RADIUS) / (rect.height - 2 * EQ_THUMB_RADIUS);
+    const minimum = Number(slider.min), maximum = Number(slider.max), step = Number(slider.step);
+    const gain = maximum - fraction * (maximum - minimum);
+    slider.value = Math.round(Math.max(minimum, Math.min(maximum, gain)) / step) * step;
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  slider.addEventListener('pointerdown', event => {
+    if (slider.disabled || eqPointer || event.button !== 0 || !event.isPrimary) return;
+    event.preventDefault();
+    eqPointer = { id: event.pointerId, slider };
+    slider.focus({ preventScroll: true });
+    slider.setPointerCapture(event.pointerId);
+    move(event);
+  });
+  slider.addEventListener('pointermove', event => {
+    if (eqPointer?.slider === slider && eqPointer.id === event.pointerId) {
+      event.preventDefault();
+      move(event);
+    }
+  });
+  slider.addEventListener('pointerup', event => {
+    if (eqPointer?.slider !== slider || eqPointer.id !== event.pointerId) return;
+    event.preventDefault();
+    move(event);
+    eqPointer = null;
+    slider.releasePointerCapture(event.pointerId);
+    slider.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  const cancel = event => {
+    if (eqPointer?.slider !== slider || eqPointer.id !== event.pointerId) return;
+    eqPointer = null;
+    model.eqBandsDraft = null;
+    renderEqualizer();
+  };
+  slider.addEventListener('pointercancel', cancel);
+  slider.addEventListener('lostpointercapture', cancel);
+  slider.addEventListener('input', () => {
     model.revision++;
-    model.eqBandsDraft = Array.from({ length: 5 }, (_, band) => Number($(`eqBand${band}`).value));
+    model.eqBandsDraft = Array.from({ length: BAND_COUNT }, (_, band) => Number($(`eqBand${band}`).value));
     renderEqualizer();
   });
-  $(`eqBand${index}`).addEventListener('change', configureEqualizer);
+  slider.addEventListener('change', configureEqualizer);
 }
+new ResizeObserver(renderEqualizerCurve).observe($('eqGraph'));
 $('eqEnabled').addEventListener('change', configureEqualizer);
 $('eqPreset').addEventListener('change', configureEqualizer);
 $('streamButton').addEventListener('click', toggleStream);

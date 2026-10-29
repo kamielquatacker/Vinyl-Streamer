@@ -20,7 +20,7 @@ For installation, updates, recovery and troubleshooting, see **[docs/setup.md](d
 
 ## Equalizer
 
-The **Geluid** panel offers five presets plus **Custom** with five sliders (-6 to +6 dB). Adjusting a preset automatically switches to Custom; changes apply when you release the slider. The equalizer is off by default and remembers your settings on the Pi. It requires **PipeWire 1.2+** with filter-chain support and a systemd user session. Changing the sound briefly interrupts streaming. Headroom follows the combined filter response instead of adding all positive gains; a flat curve has no attenuation. Speaker volume and mute still work normally.
+The **Geluid** panel offers five presets plus **Custom** with six sliders (60 Hz, 150 Hz, 400 Hz, 1 kHz, 2.4 kHz and 15 kHz, from -10 to +10 dB). Adjusting a preset automatically switches to Custom; changes apply when you release the slider. A smooth curve follows the slider positions. Each full slider column accepts touch drags, while the surrounding page remains scrollable. The equalizer is off by default and remembers your settings on the Pi. It requires **PipeWire 1.2+** with filter-chain support and a systemd user session. Changing the sound briefly interrupts streaming. Headroom follows the combined filter response instead of adding all positive gains; a flat curve has no attenuation. Speaker volume and mute still work normally.
 
 ## Add to your phone's home screen
 

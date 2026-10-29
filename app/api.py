@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from app import audio
+from app.bands import GAIN_LIMIT
 from app.controller import StreamConflict, StreamController
 from app.discovery import AirPlayDiscovery
 
@@ -56,7 +57,7 @@ class MuteRequest(BaseModel):
 class EqualizerRequest(BaseModel):
     enabled: bool
     preset: Literal["custom", "neutral", "warm", "bass", "clear", "voices"] = "neutral"
-    bands: list[Annotated[float, Field(ge=-6, le=6, allow_inf_nan=False)]] | None = Field(default=None, min_length=5, max_length=5)
+    bands: list[Annotated[float, Field(ge=-GAIN_LIMIT, le=GAIN_LIMIT, allow_inf_nan=False)]] | None = Field(default=None, min_length=6, max_length=6)
 
 
 class EqualizerPreset(BaseModel):
@@ -71,8 +72,8 @@ class EqualizerStatus(BaseModel):
     active: bool = False
     available: bool = False
     preamp_db: float = 0
-    bands: list[float] = Field(default_factory=lambda: [0] * 5)
-    custom_bands: list[float] = Field(default_factory=lambda: [0] * 5)
+    bands: list[float] = Field(default_factory=lambda: [0] * 6)
+    custom_bands: list[float] = Field(default_factory=lambda: [0] * 6)
     presets: list[EqualizerPreset] = Field(default_factory=list)
 
 

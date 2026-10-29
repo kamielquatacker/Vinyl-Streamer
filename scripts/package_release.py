@@ -19,7 +19,7 @@ DIRECTORIES = ("app", "scripts", "tests", "deploy", "docs")
 TEXT_SUFFIXES = {".py", ".js", ".css", ".html", ".md", ".txt", ".ini", ".service", ".svg", ".webmanifest"}
 EXCLUDED = {"__pycache__", "venv", "artifacts", "node_modules"}
 REQUIRED = (
-    "app/api.py", "app/equalizer.py", "app/static/index.html", "scripts/run_server.py", "deploy/vinyl-streamer-app.service",
+    "app/api.py", "app/equalizer.py", "app/bands.py", "app/static/index.html", "scripts/run_server.py", "deploy/vinyl-streamer-app.service",
     "app/static/manifest.webmanifest", "app/static/icons/icon.svg",
     "app/static/icons/icon-192.png", "app/static/icons/icon-512.png",
     "app/static/icons/icon-maskable-512.png", "app/static/icons/apple-touch-icon.png",

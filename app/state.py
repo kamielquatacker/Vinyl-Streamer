@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import os
 import re
 import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+
+from app.bands import valid_bands
 
 STATE_PATH = Path(os.environ.get("VINYL_STATE_PATH", str(Path(tempfile.gettempdir()) / "vinyl_streamer_state.json")))
 logger = logging.getLogger(__name__)
@@ -45,10 +46,8 @@ def load_state() -> StreamState:
                 raise ValueError("Invalid equalizer identity")
         elif state.eq_sink is not None or state.eq_preset is not None:
             raise ValueError("Incomplete equalizer identity")
-        if state.eq_bands is not None and (
-            not isinstance(state.eq_bands, list) or len(state.eq_bands) != 5 or any(
-                type(value) not in (int, float) or not math.isfinite(value) or not -6 <= value <= 6 for value in state.eq_bands)
-        ):
+        # Keep old live-route metadata intact until the route is replaced.
+        if state.eq_bands is not None and not valid_bands(state.eq_bands, (5, 6), limit=12):
             raise ValueError("Invalid equalizer bands")
         if state.eq_preset == "custom" and state.eq_bands is None:
             raise ValueError("Missing custom equalizer bands")

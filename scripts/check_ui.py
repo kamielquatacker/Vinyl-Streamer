@@ -217,8 +217,11 @@ def main() -> None:
             assert len([call for call in calls if call[0] == "volume"]) <= 2
             page.evaluate("window.releaseStatus()")
             expect(page.locator("#volumeValue")).to_have_text("52%")
+            expect(page.locator("#muteButton")).to_have_attribute("aria-label", "Dempen")
             page.locator("#muteButton").click()
             expect(page.locator("#muteButton")).to_have_attribute("aria-pressed", "true")
+            expect(page.locator("#muteButton")).to_have_attribute("aria-label", "Geluid aan")
+            expect(page.locator("#muteButton .sound-muted")).to_be_visible()
             page.screenshot(path=str(artifacts / "desktop-streaming.png"), full_page=True)
             toggle.click()
             expect(theme).to_have_attribute("data-theme", "dark")

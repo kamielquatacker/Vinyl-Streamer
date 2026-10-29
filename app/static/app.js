@@ -171,7 +171,9 @@ function render() {
       $('volume').value = volume;
     }
   }
-  $('muteButton').textContent = status.muted ? 'Geluid aan' : 'Dempen';
+  const muteLabel = status.muted ? 'Geluid aan' : 'Dempen';
+  $('muteButton').setAttribute('aria-label', muteLabel);
+  $('muteButton').title = muteLabel;
   $('muteButton').setAttribute('aria-pressed', String(Boolean(status.muted)));
   renderSpeakers();
   renderDetails();

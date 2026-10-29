@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -55,7 +55,8 @@ class MuteRequest(BaseModel):
 
 class EqualizerRequest(BaseModel):
     enabled: bool
-    preset: Literal["neutral", "warm", "bass", "clear", "voices"] = "neutral"
+    preset: Literal["custom", "neutral", "warm", "bass", "clear", "voices"] = "neutral"
+    bands: list[Annotated[float, Field(ge=-6, le=6, allow_inf_nan=False)]] | None = Field(default=None, min_length=5, max_length=5)
 
 
 class EqualizerPreset(BaseModel):
@@ -70,6 +71,8 @@ class EqualizerStatus(BaseModel):
     active: bool = False
     available: bool = False
     preamp_db: float = 0
+    bands: list[float] = Field(default_factory=lambda: [0] * 5)
+    custom_bands: list[float] = Field(default_factory=lambda: [0] * 5)
     presets: list[EqualizerPreset] = Field(default_factory=list)
 
 
@@ -86,6 +89,7 @@ class StatusResponse(BaseModel):
     eq_unit: str | None = None
     eq_sink: str | None = None
     eq_preset: str | None = None
+    eq_bands: list[float] | None = None
     eq_cleanup: list[str] = Field(default_factory=list)
     equalizer: EqualizerStatus = Field(default_factory=EqualizerStatus)
 
@@ -137,7 +141,7 @@ def disconnect() -> dict:
 
 @app.post("/api/equalizer", response_model=StatusResponse)
 def set_equalizer(req: EqualizerRequest) -> dict:
-    return controller.configure_equalizer(req.enabled, req.preset)
+    return controller.configure_equalizer(req.enabled, req.preset, req.bands)
 
 
 @app.post("/api/volume")

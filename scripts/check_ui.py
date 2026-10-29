@@ -53,10 +53,12 @@ def main() -> None:
             }
             status = {"running": False, "sink": None, "source": None, "latency_ms": 80, "volume": None, "muted": None, "warnings": []}
             flags = {"connect_error": False, "disconnect_error": False, "status_error": False, "volume_error": False, "eq_error": False}
+            preset_bands = {"custom": [0]*5, "neutral": [0]*5, "warm": [2,1,0,-1,-2],
+                            "bass": [4,2,0,0,-1], "clear": [-1,-1,0,2,1], "voices": [-3,-1,2,2,-1]}
             status["equalizer"] = {
-                "enabled": False, "preset": "neutral", "active": False, "available": True, "preamp_db": 0,
+                "enabled": False, "preset": "neutral", "active": False, "available": True, "preamp_db": 0, "bands": [0]*5, "custom_bands": [0]*5,
                 "presets": [{"id": key, "name": name, "description": description} for key, name, description in [
-                    ("neutral", "Neutraal", "Geen tooncorrectie."), ("warm", "Warm", "Wat voller laag en zachter hoog."),
+                    ("custom", "Custom", "Je eigen klankinstelling."), ("neutral", "Neutraal", "Geen tooncorrectie."), ("warm", "Warm", "Wat voller laag en zachter hoog."),
                     ("bass", "Meer bas", "Meer nadruk op de lage tonen."), ("clear", "Helder", "Meer nadruk op details."),
                     ("voices", "Stemmen", "Meer nadruk op stemmen.")]],
             }
@@ -90,6 +92,8 @@ def main() -> None:
                     if flags["eq_error"]:
                         code, data = 503, {"detail": "Equaliser kon niet starten"}
                     else:
+                        status["equalizer"]["custom_bands"] = body.get("bands", status["equalizer"]["custom_bands"])
+                        status["equalizer"]["bands"] = status["equalizer"]["custom_bands"] if body["preset"] == "custom" else preset_bands[body["preset"]]
                         status["equalizer"].update(enabled=body["enabled"], preset=body["preset"],
                             active=body["enabled"] and status["running"], preamp_db=-3 if body["preset"] == "warm" else 0)
                         data = status
@@ -189,6 +193,25 @@ def main() -> None:
             page.locator("#eqPreset").select_option("clear")
             expect(page.locator("#eqPreset")).to_have_value("clear")
             expect(page.locator("#eqError")).to_be_hidden()
+            expect(page.locator("#eqBand3")).to_have_value("2")
+            before = len([call for call in calls if call[0] == "equalizer"])
+            page.locator("#eqBand0").evaluate("""el => {
+                el.value = 1; el.dispatchEvent(new Event('input', {bubbles:true}));
+                el.value = 2.5; el.dispatchEvent(new Event('input', {bubbles:true}));
+            }""")
+            expect(page.locator("#eqPreset")).to_have_value("custom")
+            expect(page.locator("#eqBandValue0")).to_have_text("+2.5 dB")
+            assert len([call for call in calls if call[0] == "equalizer"]) == before
+            page.locator("#eqBand0").dispatch_event("change")
+            expect(page.locator("#eqBand0")).to_be_enabled()
+            assert status["equalizer"]["bands"] == [2.5,-1,0,2,1]
+            assert len([call for call in calls if call[0] == "equalizer"]) == before + 1
+            page.reload()
+            expect(page.locator("#eqBand0")).to_have_value("2.5")
+            page.locator("#eqBand0").focus()
+            page.locator("#eqBand0").press("ArrowUp")
+            expect(page.locator("#eqBand0")).to_have_value("3")
+            expect(page.locator("#eqBand0")).to_be_enabled()
             page.locator("#eqEnabled").uncheck()
             expect(page.locator("#eqHint")).to_contain_text("rechtstreeks")
 
@@ -303,6 +326,8 @@ def main() -> None:
                 assert mobile.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
                 for control in ["#streamButton", "#themeToggle", "#volumeUp", "#muteButton"]:
                     assert mobile.locator(control).bounding_box()["height"] >= 44
+                band_box = mobile.locator("#eqBand0").bounding_box()
+                assert band_box["width"] >= 44 and band_box["height"] > band_box["width"]
                 mobile.locator(".advanced > summary").click()
                 assert mobile.locator("#source").evaluate("el => getComputedStyle(el).fontSize") == "16px"
                 mobile.locator(".advanced > summary").click()

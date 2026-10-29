@@ -124,3 +124,25 @@ def test_equalizer_settings_apply_and_invalid_presets_are_rejected(client, backe
     assert status["volume"] == 37
     assert client.post("/api/disconnect").status_code == 200
     assert backend.eq_stops
+
+
+
+@pytest.mark.parametrize("bands", [[0]*4, [0]*6, [6.1,0,0,0,0], [0,0,-6.1,0,0], ["invalid"]*5])
+def test_invalid_custom_bands_return_validation_error(client, bands):
+    response = client.post("/api/equalizer", json={"enabled": True, "preset": "custom", "bands": bands})
+    assert response.status_code == 422
+
+
+def test_custom_bands_are_returned_by_api(client):
+    bands = [2, -1, 0, 0.5, -2]
+    response = client.post("/api/equalizer", json={"enabled": False, "preset": "custom", "bands": bands})
+    assert response.status_code == 200
+    assert response.json()["equalizer"]["bands"] == bands
+
+
+
+@pytest.mark.parametrize("preset", ["custom", "neutral", "warm", "bass", "clear", "voices"])
+def test_all_equalizer_choices_remain_selectable(client, preset):
+    response = client.post("/api/equalizer", json={"enabled": False, "preset": preset})
+    assert response.status_code == 200
+    assert response.json()["equalizer"]["preset"] == preset

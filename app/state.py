@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import tempfile
@@ -24,6 +25,7 @@ class StreamState:
     eq_unit: str | None = None
     eq_sink: str | None = None
     eq_preset: str | None = None
+    eq_bands: list[float] | None = None
     eq_cleanup: list[str] = field(default_factory=list)
 
 
@@ -39,10 +41,17 @@ def load_state() -> StreamState:
             raise ValueError("Invalid stream settings")
         if state.eq_unit is not None:
             match = EQ_UNIT.fullmatch(state.eq_unit)
-            if not match or state.eq_sink != "vinyl_eq." + match.group(1) or state.eq_preset not in {"neutral", "warm", "bass", "clear", "voices"}:
+            if not match or state.eq_sink != "vinyl_eq." + match.group(1) or state.eq_preset not in {"custom", "neutral", "warm", "bass", "clear", "voices"}:
                 raise ValueError("Invalid equalizer identity")
         elif state.eq_sink is not None or state.eq_preset is not None:
             raise ValueError("Incomplete equalizer identity")
+        if state.eq_bands is not None and (
+            not isinstance(state.eq_bands, list) or len(state.eq_bands) != 5 or any(
+                type(value) not in (int, float) or not math.isfinite(value) or not -6 <= value <= 6 for value in state.eq_bands)
+        ):
+            raise ValueError("Invalid equalizer bands")
+        if state.eq_preset == "custom" and state.eq_bands is None:
+            raise ValueError("Missing custom equalizer bands")
         if not isinstance(state.eq_cleanup, list) or any(not isinstance(unit, str) or not EQ_UNIT.fullmatch(unit) for unit in state.eq_cleanup):
             raise ValueError("Invalid equalizer cleanup list")
         return state

@@ -20,7 +20,7 @@ For installation, updates, recovery and troubleshooting, see **[docs/setup.md](d
 
 ## Equalizer
 
-The **Geluid** panel offers five presets: Neutraal, Warm, Meer bas, Helder and Stemmen. The equalizer is off by default and remembers your settings on the Pi. It requires **PipeWire 1.2+** with filter-chain support and a systemd user session. Switching presets briefly interrupts the stream. Presets reserve headroom, so they may sound quieter; speaker volume and mute still work normally.
+The **Geluid** panel offers five presets plus **Custom** with five sliders (-6 to +6 dB). Adjusting a preset automatically switches to Custom; changes apply when you release the slider. The equalizer is off by default and remembers your settings on the Pi. It requires **PipeWire 1.2+** with filter-chain support and a systemd user session. Changing the sound briefly interrupts streaming. Headroom follows the combined filter response instead of adding all positive gains; a flat curve has no attenuation. Speaker volume and mute still work normally.
 
 ## Add to your phone's home screen
 

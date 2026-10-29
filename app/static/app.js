@@ -4,7 +4,7 @@ const model = {
   status: { running: false }, online: false, loaded: false, busy: false,
   refreshing: false, polling: false, volumePending: null, volumeWorking: false,
   volumeTimer: null, editingVolume: false, discoveryTimer: null,
-  revision: 0, muteWorking: false, eqWorking: false, eqDraft: null,
+  revision: 0, muteWorking: false, eqWorking: false, eqDraft: null, eqBandsDraft: null,
 };
 
 function message(id, text = '') {
@@ -181,7 +181,8 @@ function render() {
 }
 
 function renderEqualizer() {
-  const settings = model.eqDraft || model.status.equalizer;
+  const settings = model.eqDraft || (model.eqBandsDraft
+    ? { ...model.status.equalizer, preset: 'custom', bands: model.eqBandsDraft } : model.status.equalizer);
   const available = model.status.equalizer?.available;
   const presets = model.status.equalizer?.presets || [];
   const select = $('eqPreset');
@@ -200,6 +201,15 @@ function renderEqualizer() {
   const disabled = model.busy || model.eqWorking || model.volumeWorking || model.muteWorking || !model.online || !available;
   $('eqEnabled').disabled = model.busy || model.eqWorking || model.volumeWorking || model.muteWorking || !model.online || (!available && !settings?.enabled);
   select.disabled = disabled;
+  const bands = settings?.bands || [0, 0, 0, 0, 0];
+  bands.forEach((gain, index) => {
+    const slider = $(`eqBand${index}`);
+    slider.disabled = disabled;
+    slider.value = gain;
+    const label = `${gain > 0 ? '+' : ''}${gain} dB`;
+    slider.setAttribute('aria-valuetext', label);
+    $(`eqBandValue${index}`).textContent = label;
+  });
   const preset = presets.find(item => item.id === settings?.preset);
   $('eqHint').textContent = model.eqWorking ? 'Geluid aanpassen...'
     : !model.status.equalizer ? 'Instellingen ophalen...'
@@ -207,12 +217,14 @@ function renderEqualizer() {
     : !settings?.enabled ? 'Uit. Je audio gaat rechtstreeks naar de speaker.'
     : !model.status.running ? `${preset?.description || ''} Wordt toegepast bij starten.`
     : !model.status.equalizer.active ? 'Equaliser niet beschikbaar. Schakel uit of start streaming opnieuw.'
-    : `${preset?.description || ''} ${model.status.equalizer.preamp_db < 0 ? 'Kan iets zachter klinken om vervorming te voorkomen. ' : ''}Bij wisselen kan de audio kort onderbreken.`;
+    : `${preset?.description || ''} ${model.status.equalizer.preamp_db < 0 ? 'Bij versterkte banden kan het geluid iets zachter zijn. ' : ''}Bij wisselen kan de audio kort onderbreken.`;
 }
 
 async function configureEqualizer() {
   if (model.eqWorking || model.busy) return;
-  model.eqDraft = { enabled: $('eqEnabled').checked, preset: $('eqPreset').value };
+  const preset = $('eqPreset').value;
+  model.eqDraft = { enabled: $('eqEnabled').checked, preset,
+    bands: model.eqBandsDraft || model.status.equalizer?.custom_bands || [0, 0, 0, 0, 0] };
   model.eqWorking = true;
   model.revision++;
   render();
@@ -225,6 +237,7 @@ async function configureEqualizer() {
   } finally {
     model.revision++;
     model.eqDraft = null;
+    model.eqBandsDraft = null;
     model.eqWorking = false;
     render();
     await refreshStatus();
@@ -232,7 +245,7 @@ async function configureEqualizer() {
 }
 
 async function refreshStatus() {
-  if (model.polling || model.busy || model.eqWorking || model.volumeWorking || model.volumePending || model.muteWorking) return;
+  if (model.polling || model.eqBandsDraft || model.busy || model.eqWorking || model.volumeWorking || model.volumePending || model.muteWorking) return;
   model.polling = true;
   const revision = model.revision;
   try {
@@ -383,6 +396,14 @@ async function toggleMute() {
   }
 }
 
+for (let index = 0; index < 5; index++) {
+  $(`eqBand${index}`).addEventListener('input', () => {
+    model.revision++;
+    model.eqBandsDraft = Array.from({ length: 5 }, (_, band) => Number($(`eqBand${band}`).value));
+    renderEqualizer();
+  });
+  $(`eqBand${index}`).addEventListener('change', configureEqualizer);
+}
 $('eqEnabled').addEventListener('change', configureEqualizer);
 $('eqPreset').addEventListener('change', configureEqualizer);
 $('streamButton').addEventListener('click', toggleStream);

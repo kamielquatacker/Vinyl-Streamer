@@ -132,3 +132,9 @@ select, input[type="number"] { font-size: 16px; }
 .eq-panel .section-heading { margin-bottom: 8px; }
 .eq-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); min-height: 44px; cursor: pointer; }
 .eq-label { display: block; color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+
+.eq-sliders { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin-top: 22px; }
+.eq-band { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; min-width: 0; }
+.eq-band input[type="range"] { writing-mode: vertical-lr; direction: rtl; width: 44px; height: 144px; flex: none; background: linear-gradient(var(--line), var(--line)) center / 100% 1px no-repeat; }
+.eq-band output { font-size: 12px; white-space: nowrap; }
+.eq-scale { text-align: center; font-size: 12px; }

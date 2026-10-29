@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+import cmath
+from functools import lru_cache
 import os
 from pathlib import Path
 import re
@@ -17,6 +20,7 @@ from app.state import atomic_write_json, atomic_write_text
 logger = logging.getLogger(__name__)
 FREQUENCIES = (60, 250, 1000, 4000, 12000)
 PRESETS = {
+    "custom": {"name": "Custom", "description": "Je eigen klankinstelling.", "gains": (0, 0, 0, 0, 0)},
     "neutral": {"name": "Neutraal", "description": "Geen tooncorrectie.", "gains": (0, 0, 0, 0, 0)},
     "warm": {"name": "Warm", "description": "Wat voller laag en zachter hoog.", "gains": (2, 1, 0, -1, -2)},
     "bass": {"name": "Meer bas", "description": "Meer nadruk op de lage tonen.", "gains": (4, 2, 0, 0, -1)},
@@ -34,10 +38,20 @@ UNIT_PATTERN = re.compile(r"vinyl-streamer-eq-([0-9a-f]{32})\.service")
 class Settings:
     enabled: bool = False
     preset: str = "neutral"
+    bands: tuple[float, ...] = (0, 0, 0, 0, 0)
 
     def __post_init__(self) -> None:
+        if not isinstance(self.bands, (list, tuple)) or len(self.bands) != 5 or any(
+            type(value) not in (int, float) or not math.isfinite(value) or not -6 <= value <= 6 for value in self.bands
+        ):
+            raise ValueError("Kies vijf equaliserbanden tussen -6 en +6 dB.")
+        object.__setattr__(self, "bands", tuple(self.bands))
         if type(self.enabled) is not bool or self.preset not in PRESETS:
             raise ValueError("Ongeldige equaliserinstelling.")
+
+    @property
+    def gains(self) -> tuple:
+        return self.bands if self.preset == "custom" else PRESETS[self.preset]["gains"]
 
 
 def load_settings() -> Settings:
@@ -64,21 +78,49 @@ def processing_sink(unit: str) -> str:
     return "vinyl_eq." + match.group(1)
 
 
-def preamp_db(preset: str) -> float:
-    # The sum of positive band gains bounds the gain of the cascaded filters.
-    # This deliberately conservative headroom does not replace a limiter.
-    return -float(sum(max(gain, 0) for gain in PRESETS[preset]["gains"]))
+def gains_for(preset: str, bands=None) -> tuple:
+    return Settings(preset=preset, bands=bands if bands is not None else (0, 0, 0, 0, 0)).gains
 
 
-def filter_config(unit: str, target: str, preset: str) -> dict:
+@lru_cache(maxsize=128)
+def _headroom(gains: tuple) -> float:
+    if max(gains) <= 0:
+        return 0.0
+    # RBJ peaking response, including overlapping bands.
+    # https://www.w3.org/TR/audio-eq-cookbook/
+    # Sample common audio rates; keep 0.2 dB margin above the measured peak.
+    peak = 0.0
+    for rate in (44100, 48000, 96000):
+        coefficients = []
+        for frequency, gain in zip(FREQUENCIES, gains):
+            a = 10 ** (gain / 40)
+            omega = 2 * math.pi * frequency / rate
+            alpha = math.sin(omega) / (2 * 0.7)
+            coefficients.append((1 + alpha*a, -2*math.cos(omega), 1-alpha*a,
+                                 1+alpha/a, -2*math.cos(omega), 1-alpha/a))
+        frequencies = [10 * (rate * 0.499 / 10) ** (index / 1023) for index in range(1024)]
+        for frequency in frequencies + list(FREQUENCIES):
+            z = cmath.exp(-2j * math.pi * frequency / rate)
+            response = 1.0
+            for b0, b1, b2, a0, a1, a2 in coefficients:
+                response *= abs((b0+b1*z+b2*z*z)/(a0+a1*z+a2*z*z))
+            peak = max(peak, 20 * math.log10(response))
+    return -math.ceil((peak + 0.2) * 10 - 1e-8) / 10
+
+
+def preamp_db(preset: str, bands=None) -> float:
+    return _headroom(gains_for(preset, bands))
+
+
+def filter_config(unit: str, target: str, preset: str, bands=None) -> dict:
     name = processing_sink(unit)
     nodes, links, inputs, outputs = [], [], [], []
     for channel in ("L", "R"):
         previous = f"preamp_{channel}"
         nodes.append({"type": "builtin", "name": previous, "label": "linear",
-                      "control": {"Mult": 10 ** (preamp_db(preset) / 20), "Add": 0.0}})
+                      "control": {"Mult": 10 ** (preamp_db(preset, bands) / 20), "Add": 0.0}})
         inputs.append(previous + ":In")
-        for index, (frequency, gain) in enumerate(zip(FREQUENCIES, PRESETS[preset]["gains"])):
+        for index, (frequency, gain) in enumerate(zip(FREQUENCIES, gains_for(preset, bands))):
             current = f"band{index}_{channel}"
             nodes.append({"type": "builtin", "name": current, "label": "bq_peaking",
                           "control": {"Freq": frequency, "Q": 0.7, "Gain": gain}})
@@ -137,7 +179,7 @@ class EqualizerEngine:
         processing_sink(unit)  # Validate before using a unit in a path or command.
         return self.runtime_dir() / (unit.removesuffix(".service") + ".conf")
 
-    def start(self, unit: str, target: str, preset: str) -> str:
+    def start(self, unit: str, target: str, preset: str, bands=None) -> str:
         if not self.available():
             raise RuntimeError("Equaliser vereist PipeWire en een systemd-gebruikerssessie op de Pi.")
         version = audio._run(["pipewire", "--version"])
@@ -145,7 +187,7 @@ class EqualizerEngine:
         if not match or tuple(map(int, match.groups())) < (1, 2):
             raise RuntimeError("Equaliser vereist PipeWire 1.2 of nieuwer.")
         path = self.config_path(unit)
-        atomic_write_text(path, config_text(filter_config(unit, target, preset)))
+        atomic_write_text(path, config_text(filter_config(unit, target, preset, bands)))
         # No PartOf= relation: stopping/restarting the API must not orphan or kill audio.
         audio._run(["systemd-run", "--user", "--quiet", "--collect", "--unit=" + unit,
                     "--property=Type=exec", "--property=TimeoutStopSec=3s",
@@ -159,6 +201,10 @@ class EqualizerEngine:
                 break
             ready = ready + 1 if active == "active" and any(item.name == name for item in audio.list_sinks()) else 0
             if ready >= 2:
+                # Internal processing must not inherit a quiet default/remembered volume.
+                # User volume remains on the physical speaker only.
+                audio.set_sink_volume(name, 100)
+                audio.set_sink_mute(name, False)
                 return name
             time.sleep(0.1)
         raise RuntimeError("De equaliser kon niet starten. Controleer de PipeWire-filter-chain en de gebruikerslogs.")

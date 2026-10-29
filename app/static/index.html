@@ -15,9 +15,9 @@
   <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
   <title>Vinyl Streamer</title>
-  <script src="/static/theme.js?v=6"></script>
-  <link rel="stylesheet" href="/static/style.css?v=6">
-  <script type="module" src="/static/app.js?v=6"></script>
+  <script src="/static/theme.js?v=7"></script>
+  <link rel="stylesheet" href="/static/style.css?v=7">
+  <script type="module" src="/static/app.js?v=7"></script>
 </head>
 <body>
   <main>
@@ -73,6 +73,14 @@
       </div>
       <label class="eq-label" for="eqPreset">Preset</label>
       <select id="eqPreset" disabled><option value="neutral">Neutraal</option></select>
+      <div class="eq-sliders" role="group" aria-label="Equaliserbanden">
+        <label class="eq-band" for="eqBand0"><span>60 Hz</span><input id="eqBand0" type="range" min="-6" max="6" step="0.5" value="0" aria-label="60 Hz" aria-valuetext="0 dB" disabled><output id="eqBandValue0" for="eqBand0">0 dB</output></label>
+        <label class="eq-band" for="eqBand1"><span>250 Hz</span><input id="eqBand1" type="range" min="-6" max="6" step="0.5" value="0" aria-label="250 Hz" aria-valuetext="0 dB" disabled><output id="eqBandValue1" for="eqBand1">0 dB</output></label>
+        <label class="eq-band" for="eqBand2"><span>1 kHz</span><input id="eqBand2" type="range" min="-6" max="6" step="0.5" value="0" aria-label="1 kHz" aria-valuetext="0 dB" disabled><output id="eqBandValue2" for="eqBand2">0 dB</output></label>
+        <label class="eq-band" for="eqBand3"><span>4 kHz</span><input id="eqBand3" type="range" min="-6" max="6" step="0.5" value="0" aria-label="4 kHz" aria-valuetext="0 dB" disabled><output id="eqBandValue3" for="eqBand3">0 dB</output></label>
+        <label class="eq-band" for="eqBand4"><span>12 kHz</span><input id="eqBand4" type="range" min="-6" max="6" step="0.5" value="0" aria-label="12 kHz" aria-valuetext="0 dB" disabled><output id="eqBandValue4" for="eqBand4">0 dB</output></label>
+      </div>
+      <p class="hint eq-scale">-6 tot +6 dB &middot; Pas een preset aan of kies Custom.</p>
       <p class="hint" id="eqHint" role="status">Instellingen ophalen...</p>
       <p class="notice error" id="eqError" role="alert" hidden></p>
     </section>

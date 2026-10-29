@@ -32,7 +32,7 @@ def test_enabled_equalizer_routes_stereo_and_keeps_volume_on_speaker(backend):
     assert status["equalizer"]["active"]
     assert backend.starts[0][1] == status["eq_sink"]
     assert status["sink"] == backend.eq_starts[0][1]
-    assert status["equalizer"]["preamp_db"] == -3
+    assert -3 < status["equalizer"]["preamp_db"] < -2
     backend.controller.set_volume(volume=45)
     assert backend.volumes == [(status["sink"], 45)]
 
@@ -221,6 +221,9 @@ def test_native_engine_waits_for_stable_active_sink(monkeypatch, tmp_path):
     assert engine.start(unit, "raop_sink.bose", "warm") == equalizer.processing_sink(unit)
     assert sum("--property=ActiveState" in call for call in calls) == 2
     assert any("--collect" in call for call in calls)
+    name = equalizer.processing_sink(unit)
+    assert ["pactl", "set-sink-volume", name, "100%"] in calls
+    assert ["pactl", "set-sink-mute", name, "0"] in calls
     config = engine.config_path(unit).read_text()
     assert '"target.object" = "raop_sink.bose"' in config
     assert '"Mult" =' in config
@@ -248,3 +251,63 @@ def test_native_engine_cleanup_of_collected_unit_is_idempotent(monkeypatch, tmp_
         engine.stop(unit)
         assert not path.exists()
         assert all("stop" not in call.args[0] for call in run.call_args_list)
+
+
+
+def test_custom_bands_survive_restart_and_preset_roundtrip(backend):
+    bands = [3, 1, -2, 0.5, -1]
+    backend.controller.configure_equalizer(True, "custom", bands)
+    start(backend)
+    restored = controller.StreamController()
+    assert restored.status()["equalizer"]["bands"] == bands
+    original = restored.state.eq_unit
+    restored.configure_equalizer(True, "custom", [2, 1, -2, 0.5, -1])
+    assert restored.state.eq_unit != original
+    restored.configure_equalizer(True, "warm")
+    restored.configure_equalizer(True, "custom")
+    assert restored.status()["equalizer"]["bands"] == [2, 1, -2, 0.5, -1]
+    assert len(backend.modules) == 1
+    assert not backend.volumes and not backend.mutes
+
+
+def test_custom_route_failure_preserves_old_bands(backend, monkeypatch):
+    bands = [1, 0, -1, 0, 0]
+    backend.controller.configure_equalizer(True, "custom", bands)
+    start(backend)
+    original = audio.start_loopback
+    def fail_new(source, sink, latency):
+        if sink != backend.controller.state.eq_sink:
+            raise RuntimeError("Cannot connect")
+        return original(source, sink, latency)
+    monkeypatch.setattr(audio, "start_loopback", fail_new)
+    with pytest.raises(RuntimeError):
+        backend.controller.configure_equalizer(True, "custom", [2, 0, 0, 0, 0])
+    status = backend.controller.status()
+    assert status["equalizer"]["bands"] == bands
+    assert status["eq_bands"] == bands and status["running"]
+
+
+def test_old_preferences_remain_compatible(backend):
+    equalizer.SETTINGS_PATH.write_text('{"enabled": true, "preset": "warm"}')
+    assert equalizer.load_settings() == equalizer.Settings(True, "warm")
+
+
+@pytest.mark.parametrize("bands", [[0]*4, [0]*6, [7,0,0,0,0], [float("nan")]*5, [True]*5, "invalid"])
+def test_invalid_custom_bands_rejected(bands):
+    with pytest.raises(ValueError):
+        equalizer.Settings(True, "custom", bands)
+
+
+def test_headroom_uses_combined_response_instead_of_summing_boosts():
+    assert equalizer.preamp_db("custom", [0]*5) == 0
+    assert equalizer.preamp_db("custom", [-6]*5) == 0
+    assert equalizer.preamp_db("custom", [0,0,6,0,0]) == -6.2
+    assert -15 < equalizer.preamp_db("custom", [6]*5) < -6
+    assert equalizer.preamp_db("voices") > -3
+
+
+def test_custom_graph_uses_requested_bands_on_both_channels():
+    bands = [-2, 1, 3, -1, 0.5]
+    args = equalizer.filter_config(equalizer.new_unit(), "raop_sink.bose", "custom", bands)["context.modules"][-1]["args"]
+    graph = args["filter.graph"]
+    assert [node["control"]["Gain"] for node in graph["nodes"] if node["label"] == "bq_peaking"] == bands * 2

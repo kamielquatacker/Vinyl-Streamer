@@ -23,7 +23,7 @@ class StreamController:
         self.engine = equalizer.EqualizerEngine()
         self.eq_settings = equalizer.load_settings()
         if self.state.running and self.state.eq_unit:
-            self.eq_settings = equalizer.Settings(True, self.state.eq_preset)
+            self.eq_settings = equalizer.Settings(True, self.state.eq_preset, self.state.eq_bands or self.eq_settings.bands)
         self.persistence_warning: str | None = None
         self.preferences_warning: str | None = None
         self.stream_warning: str | None = None
@@ -50,7 +50,7 @@ class StreamController:
             self.state.eq_cleanup.append(unit)
 
     def _clear_filter(self) -> None:
-        self.state.eq_unit = self.state.eq_sink = self.state.eq_preset = None
+        self.state.eq_unit = self.state.eq_sink = self.state.eq_preset = self.state.eq_bands = None
 
     def _cleanup(self) -> None:
         remaining = []
@@ -96,7 +96,9 @@ class StreamController:
                 "enabled": self.eq_settings.enabled, "preset": self.eq_settings.preset,
                 "active": bool(self.state.running and self.state.eq_unit and filter_present),
                 "available": self.engine.available(),
-                "preamp_db": equalizer.preamp_db(self.eq_settings.preset) if self.eq_settings.enabled else 0,
+                "preamp_db": equalizer.preamp_db(self.eq_settings.preset, self.eq_settings.bands) if self.eq_settings.enabled else 0,
+                "bands": list(self.eq_settings.gains),
+                "custom_bands": list(self.eq_settings.bands),
                 "presets": [{"id": key, "name": value["name"], "description": value["description"]}
                             for key, value in equalizer.PRESETS.items()],
             },
@@ -137,15 +139,16 @@ class StreamController:
         self._queue_cleanup(unit)
         self._persist()
         try:
-            sink = self.engine.start(unit, target, settings.preset)
+            sink = self.engine.start(unit, target, settings.preset, settings.bands) if settings.preset == "custom" else self.engine.start(unit, target, settings.preset)
         except (RuntimeError, OSError) as exc:
             self._cleanup()
             raise RuntimeError(str(exc)) from exc
         return unit, sink
 
-    def _activate_filter(self, unit: str | None, sink: str | None, preset: str) -> None:
+    def _activate_filter(self, unit: str | None, sink: str | None, settings: equalizer.Settings) -> None:
         self.state.eq_unit, self.state.eq_sink = unit, sink
-        self.state.eq_preset = preset if unit else None
+        self.state.eq_preset = settings.preset if unit else None
+        self.state.eq_bands = list(settings.bands) if unit and settings.preset == "custom" else None
         if unit in self.state.eq_cleanup:
             self.state.eq_cleanup.remove(unit)
 
@@ -169,7 +172,7 @@ class StreamController:
                 raise
             self.state = replace(self.state, source=source, sink=sink, latency_ms=latency_ms,
                                  loopback_module=loopback, raop_module=raop_module, running=True)
-            self._activate_filter(unit, processing, self.eq_settings.preset)
+            self._activate_filter(unit, processing, self.eq_settings)
             self.stream_warning = None
             self._persist()
             logger.info("Stream started: %s -> %s (EQ %s, module %s)", source, sink, bool(unit), loopback)
@@ -189,14 +192,15 @@ class StreamController:
             logger.info("Stream stopped")
             return self._snapshot()
 
-    def configure_equalizer(self, enabled: bool, preset: str) -> dict:
-        desired = equalizer.Settings(enabled, preset)
+    def configure_equalizer(self, enabled: bool, preset: str, bands=None) -> dict:
         with self.lock:
+            desired = equalizer.Settings(enabled, preset, self.eq_settings.bands if bands is None else bands)
             self._reconcile()
             if enabled and not self.engine.available():
                 raise RuntimeError("Equaliser vereist PipeWire en een systemd-gebruikerssessie op de Pi.")
             needs_route = self.state.running and (
                 enabled != bool(self.state.eq_unit) or enabled and preset != self.state.eq_preset
+                or enabled and preset == "custom" and list(desired.bands) != self.state.eq_bands
             )
             if needs_route:
                 self._switch_route(desired)
@@ -232,7 +236,7 @@ class StreamController:
             raise RuntimeError("De equaliser kon niet worden toegepast. " +
                                ("De vorige audiostream is hersteld." if self.state.running else self.stream_warning)) from exc
         self.state.loopback_module = loopback
-        self._activate_filter(unit, processing, desired.preset)
+        self._activate_filter(unit, processing, desired)
         self._queue_cleanup(old.eq_unit)
         self._persist()
         # Speaker volume/mute are untouched: only the processing route changes.

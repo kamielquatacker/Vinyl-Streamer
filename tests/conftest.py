@@ -39,7 +39,7 @@ def backend(monkeypatch, tmp_path):
         def available(self):
             return True
 
-        def start(self, unit, target, preset):
+        def start(self, unit, target, preset, bands=None):
             fake.eq_starts.append((unit, target, preset))
             name = equalizer.processing_sink(unit)
             fake.sinks.append(audio.AudioItem("90", name, "PipeWire", "float32le 2ch 44100Hz", "RUNNING"))

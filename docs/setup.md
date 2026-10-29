@@ -161,7 +161,7 @@ For the original manual installation, its service file may still be named `deplo
 
 ## Equalizer presets
 
-The **Geluid** panel has an on/off switch and five presets. With the equalizer off, the original direct audio route is used. Enabling it requires **PipeWire 1.2+**, its built-in filter-chain module and the existing systemd user session. No additional Python dependencies or audio plugins are needed. PulseAudio-only installations retain direct streaming.
+The **Geluid** panel has an on/off switch, five presets and **Custom** at the top of the list. Five sliders control 60 Hz, 250 Hz, 1 kHz, 4 kHz and 12 kHz, from -6 to +6 dB in 0.5 dB steps. Editing a preset automatically switches to Custom. Values are previewed while dragging and applied once you release the slider. Custom values survive switching presets and restarting the app. With the equalizer off, the original direct audio route is used. Enabling it requires **PipeWire 1.2+**, its built-in filter-chain module and the existing systemd user session. No additional Python dependencies or audio plugins are needed. PulseAudio-only installations retain direct streaming.
 
 | Preset | Sound |
 | --- | --- |
@@ -171,7 +171,7 @@ The **Geluid** panel has an on/off switch and five presets. With the equalizer o
 | Helder | More emphasis on detail |
 | Stemmen | More emphasis on voices |
 
-Each channel has five independent filters. Presets reduce the input level to reserve headroom; they can sound quieter. This is not a limiter, and boosting speaker volume above 100% can still distort. Changing a preset during playback briefly interrupts audio.
+Each channel has five independent filters. The preamp now estimates the peak of the combined filter response at common sample rates, including overlapping bands, with a 0.2 dB margin and upward rounding to 0.1 dB. It no longer adds all positive band gains. Flat and cut-only curves get no additional attenuation; boosted curves can still sound quieter. The internal EQ sink is explicitly set to 100% and unmuted when created; user volume and mute stay on the final speaker. This is an estimated frequency-response margin, not a peak limiter or loudness normalizer, and boosting speaker volume above 100% can still distort. Changing a preset during playback briefly interrupts audio.
 
 Preferences are stored at `~/.config/vinyl-streamer/equalizer.json` (`XDG_CONFIG_HOME` is respected), separately from temporary stream state. `VINYL_EQ_SETTINGS_PATH` overrides this path. Choosing a preset while stopped saves it without starting audio.
 
@@ -185,7 +185,7 @@ systemctl --user list-units 'vinyl-streamer-eq-*' --all --no-pager
 journalctl --user -u 'vinyl-streamer-eq-*' -n 60 --no-pager
 ```
 
-After updating, test all presets on the actual Pi and speaker, including Stop/Start, volume, mute and restarting the API during playback. Automated tests cover route recovery; an isolated Linux PipeWire audio test also checked all five presets and stereo separation. Actual Pi load and audible AirPlay playback still need a hardware check.
+After updating, test all presets on the actual Pi and speaker, including Stop/Start, volume, mute and restarting the API during playback. Automated tests cover custom-band validation, persistence, route recovery and the headroom calculation. An earlier isolated Linux PipeWire audio test checked the preset filters and stereo separation. The updated custom curves and volume behavior still need an audible hardware check. Stop streaming before updating so the next stream uses the new filter configuration.
 
 ## iPhone and Android home screen
 
